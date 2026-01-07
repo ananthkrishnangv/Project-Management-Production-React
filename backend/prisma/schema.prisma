@@ -1,0 +1,788 @@
+// CSIR-SERC Project Management Portal Database Schema
+// PostgreSQL with Prisma ORM
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum UserRole {
+  ADMIN
+  DIRECTOR
+  DIRECTOR_GENERAL  // DG, CSIR - read-only analytics access
+  SUPERVISOR        // Head, BKMD (Business Knowledge Management & Development)
+  PROJECT_HEAD      // Scientist assigned by Head BKMD
+  EMPLOYEE          // Project staff
+  RC_MEMBER         // Research Council member
+  EXTERNAL_OWNER    // External project owners for feedback
+}
+
+enum ProjectStatus {
+  DRAFT
+  PENDING_APPROVAL
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum ProjectCategory {
+  GAP   // Grant-in-Aid Projects
+  CNP   // Consultancy Projects  
+  OLP   // Other Lab Projects
+  EFP   // Externally Funded Projects
+}
+
+enum Currency {
+  INR
+  USD
+}
+
+enum NotificationType {
+  DEADLINE_ALERT
+  BUDGET_WARNING
+  MOU_EXPIRY
+  RC_MEETING
+  APPROVAL_REQUIRED
+  PROJECT_UPDATE
+  SYSTEM
+  ASSIGNMENT         // Staff assignment notification
+  BUDGET_REQUEST     // Budget request notification
+  PROJECT_CLOSURE    // Project completion notification
+}
+
+enum BudgetCategory {
+  MANPOWER
+  EQUIPMENT
+  TRAVEL
+  CONSUMABLES
+  OVERHEAD
+  CONTINGENCY
+  OTHER
+}
+
+enum DocumentType {
+  REPORT
+  PHOTO
+  VIDEO
+  MOU
+  CERTIFICATE
+  UC              // Utilization Certificate
+  OTHER
+}
+
+enum MilestoneStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  OVERDUE
+}
+
+enum RCMeetingStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+// ============================================
+// USER & AUTHENTICATION
+// ============================================
+
+model User {
+  id                String    @id @default(uuid())
+  email             String    @unique
+  password          String
+  firstName         String
+  lastName          String
+  designation       String?
+  phone             String?
+  mobileNumber      String?
+  alternateEmail    String?
+  role              UserRole  @default(EMPLOYEE)
+  isActive          Boolean   @default(true)
+  twoFactorEnabled  Boolean   @default(false)
+  twoFactorSecret   String?
+  profileImage      String?
+  
+  // Extended profile fields
+  publications      Json?     // Array of publication records
+  researchWorks     Json?     // Array of research work records
+  educationDetails  Json?     // Array of education records
+  bio               String?   @db.Text
+  department        String?   // e.g., "ASTAR", "WIND", "SSL"
+  employeeId        String?   // CSIR employee ID if applicable
+  
+  lastLogin         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relations
+  refreshTokens     RefreshToken[]
+  projectsHeaded    Project[]          @relation("ProjectHead")
+  projectMembership ProjectStaff[]
+  notifications     Notification[]
+  auditLogs         AuditLog[]
+  documentsUploaded Document[]
+  rcMinutesCreated  RCMinutes[]
+
+  @@index([email])
+  @@index([role])
+  @@index([department])
+
+  // Phase 3 relations
+  budgetRequests        BudgetRequest[]     @relation("BudgetRequester")
+  budgetApprovalsGiven  BudgetRequest[]     @relation("BudgetApprover")
+  reportSubmissions     ProjectReport[]     @relation("ReportSubmitter")
+  reportApprovalsGiven  ProjectReport[]     @relation("ReportApprover")
+  rcAgendaComments      RCAgendaComment[]
+}
+
+model RefreshToken {
+  id          String   @id @default(uuid())
+  token       String   @unique
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+}
+
+// ============================================
+// PROJECT MANAGEMENT
+// ============================================
+
+model Vertical {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  code        String    @unique   // e.g., "WE" for Wind Engineering
+  description String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  projects    Project[]
+
+  @@index([code])
+}
+
+model SpecialArea {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  projects    Project[]
+}
+
+model Project {
+  id                String          @id @default(uuid())
+  code              String          @unique   // e.g., GAP-2025-WE-001
+  title             String
+  description       String?
+  category          ProjectCategory
+  verticalId        String
+  vertical          Vertical        @relation(fields: [verticalId], references: [id])
+  specialAreaId     String?
+  specialArea       SpecialArea?    @relation(fields: [specialAreaId], references: [id])
+  projectHeadId     String
+  projectHead       User            @relation("ProjectHead", fields: [projectHeadId], references: [id])
+  status            ProjectStatus   @default(DRAFT)
+  startDate         DateTime
+  endDate           DateTime
+  objectives        String?
+  methodology       String?
+  expectedOutcome   String?
+  progress          Int             @default(0)  // 0-100 percentage
+  isRCReviewed      Boolean         @default(false)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  // Relations
+  staff             ProjectStaff[]
+  milestones        Milestone[]
+  budgets           Budget[]
+  expenses          Expense[]
+  documents         Document[]
+  mous              MoU[]
+  outputs           ProjectOutput[]
+  rcAgendaItems     RCAgendaItem[]
+  cashFlows         CashFlow[]
+  projectReports    ProjectReport[]
+  budgetRequests    BudgetRequest[]
+
+  @@index([code])
+  @@index([category])
+  @@index([status])
+  @@index([verticalId])
+  @@index([projectHeadId])
+}
+
+model ProjectStaff {
+  id          String   @id @default(uuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  role        String?  // Role in the project (e.g., "Co-PI", "Scientist", "Technical Officer")
+  joinedAt    DateTime @default(now())
+  leftAt      DateTime?
+  isActive    Boolean  @default(true)
+
+  @@unique([projectId, userId])
+  @@index([projectId])
+  @@index([userId])
+}
+
+model Milestone {
+  id          String          @id @default(uuid())
+  projectId   String
+  project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  startDate   DateTime
+  endDate     DateTime
+  status      MilestoneStatus @default(PENDING)
+  progress    Int             @default(0)
+  order       Int             @default(0)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([projectId])
+  @@index([status])
+}
+
+// ============================================
+// FINANCIAL MANAGEMENT
+// ============================================
+
+model Budget {
+  id              String   @id @default(uuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fiscalYear      String   // e.g., "2024-25"
+  category        String   // e.g., "Equipment", "Manpower", "Travel", "Consumables"
+  amountINR       Float
+  amountUSD       Float?
+  exchangeRate    Float?   // Rate at time of entry
+  utilized        Float    @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([fiscalYear])
+}
+
+model Expense {
+  id              String   @id @default(uuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  description     String
+  category        String
+  amount          Float
+  currency        Currency @default(INR)
+  amountINR       Float    // Converted amount in INR
+  exchangeRate    Float?   // Rate used for conversion
+  vendor          String?
+  invoiceNumber   String?
+  invoiceDate     DateTime?
+  receiptUrl      String?
+  approvedBy      String?
+  approvedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([category])
+}
+
+model CurrencyRate {
+  id              String   @id @default(uuid())
+  baseCurrency    Currency @default(USD)
+  targetCurrency  Currency @default(INR)
+  rate            Float
+  fetchedAt       DateTime @default(now())
+
+  @@index([baseCurrency, targetCurrency])
+}
+
+model CashFlow {
+  id              String   @id @default(uuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type            String   // "RECEIVED" or "UTILIZED"
+  source          String?  // Funding agency name for received
+  description     String
+  amount          Float
+  currency        Currency @default(INR)
+  amountINR       Float
+  exchangeRate    Float?
+  transactionDate DateTime
+  createdAt       DateTime @default(now())
+
+  @@index([projectId])
+  @@index([type])
+}
+
+// ============================================
+// DOCUMENTS & OUTPUTS
+// ============================================
+
+model Document {
+  id              String       @id @default(uuid())
+  projectId       String?
+  project         Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  uploadedById    String
+  uploadedBy      User         @relation(fields: [uploadedById], references: [id])
+  type            DocumentType
+  title           String
+  description     String?
+  fileName        String
+  filePath        String
+  fileSize        Int
+  mimeType        String
+  sha256Hash      String       // For integrity verification
+  version         Int          @default(1)
+  isPublic        Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([projectId])
+  @@index([type])
+  @@index([uploadedById])
+}
+
+model MoU {
+  id              String    @id @default(uuid())
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  partnerName     String
+  partnerType     String    // "Government", "Industry", "Academic", etc.
+  title           String
+  description     String?
+  signedDate      DateTime
+  expiryDate      DateTime
+  documentPath    String?
+  isActive        Boolean   @default(true)
+  alertSent       Boolean   @default(false)  // 30-day expiry alert
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([projectId])
+  @@index([expiryDate])
+}
+
+model ProjectOutput {
+  id              String   @id @default(uuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type            String   // "Publication", "Patent", "Technology Transfer", etc.
+  title           String
+  description     String?
+  authors         String?
+  publishedIn     String?
+  publishedDate   DateTime?
+  doi             String?
+  url             String?
+  attachmentPath  String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([type])
+}
+
+// ============================================
+// RESEARCH COUNCIL
+// ============================================
+
+model RCMeeting {
+  id              String          @id @default(uuid())
+  title           String
+  meetingNumber   Int
+  date            DateTime
+  venue           String?
+  status          RCMeetingStatus @default(SCHEDULED)
+  description     String?
+  agendaDocPath   String?
+  minutesDocPath  String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  agendaItems     RCAgendaItem[]
+  minutes         RCMinutes[]
+
+  @@index([date])
+  @@index([status])
+}
+
+model RCAgendaItem {
+  id              String    @id @default(uuid())
+  meetingId       String
+  meeting         RCMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  projectId       String?
+  project         Project?  @relation(fields: [projectId], references: [id])
+  itemNumber      Int
+  title           String
+  description     String?
+  type            String    // "Project Review", "New Proposal", "General", etc.
+  presenter       String?
+  duration        Int?      // In minutes
+  status          String?   // "Approved", "Deferred", "Rejected"
+  remarks         String?
+  attachments     Json?     // Array of attachment paths
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  comments        RCAgendaComment[]
+
+  @@index([meetingId])
+  @@index([projectId])
+}
+
+model RCMinutes {
+  id              String    @id @default(uuid())
+  meetingId       String
+  meeting         RCMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  createdById     String
+  createdBy       User      @relation(fields: [createdById], references: [id])
+  content         String    // Rich text content
+  version         Int       @default(1)
+  isFinal         Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([meetingId])
+}
+
+// ============================================
+// NOTIFICATIONS & AUDIT
+// ============================================
+
+model Notification {
+  id              String           @id @default(uuid())
+  userId          String
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type            NotificationType
+  title           String
+  message         String
+  link            String?          // Link to relevant page
+  isRead          Boolean          @default(false)
+  emailSent       Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([type])
+}
+
+model AuditLog {
+  id              String   @id @default(uuid())
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id])
+  action          String   // "CREATE", "UPDATE", "DELETE", "LOGIN", etc.
+  entity          String   // "Project", "User", "Budget", etc.
+  entityId        String?
+  oldValue        Json?
+  newValue        Json?
+  ipAddress       String?
+  userAgent       String?
+  createdAt       DateTime @default(now())
+
+  @@index([userId])
+  @@index([entity])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// ============================================
+// EXTERNAL FEEDBACK
+// ============================================
+
+model ExternalFeedback {
+  id              String   @id @default(uuid())
+  projectId       String
+  externalUserId  String
+  rating          Int?     // 1-5 scale
+  feedback        String?
+  certificatePath String?
+  submittedAt     DateTime @default(now())
+
+  @@index([projectId])
+  @@index([externalUserId])
+}
+
+// ============================================
+// SYSTEM CONFIGURATION
+// ============================================
+
+model SystemConfig {
+  id              String   @id @default(uuid())
+  key             String   @unique
+  value           String
+  description     String?
+  updatedAt       DateTime @updatedAt
+
+  @@index([key])
+}
+
+// ============================================
+// CUSTOMIZABLE PROJECT TYPES & CATEGORIES
+// ============================================
+
+model ProjectTypeConfig {
+  id          String   @id @default(uuid())
+  code        String   @unique  // e.g., "GAP", "EFP"
+  name        String            // e.g., "Grant-in-Aid Projects"
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([code])
+}
+
+model ProjectCategoryConfig {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([code])
+}
+
+// ============================================
+// FUND ALLOCATION & BUDGET TRACKING
+// ============================================
+
+model FundAllocation {
+  id              String   @id @default(uuid())
+  projectId       String?
+  category        String   // "MANPOWER", "EQUIPMENT", "CONSUMABLES", "TRAVEL", "OVERHEAD", "OTHER"
+  subcategory     String?  // More specific categorization
+  description     String
+  allocatedAmount Float
+  utilizedAmount  Float    @default(0)
+  currency        Currency @default(INR)
+  fiscalYear      String   // e.g., "2024-25"
+  allocatedBy     String?  // User ID who allocated
+  approvedBy      String?  // Director/Supervisor who approved
+  approvedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([category])
+  @@index([fiscalYear])
+}
+
+// ============================================
+// APPROVAL WORKFLOWS
+// ============================================
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REVISION_REQUESTED
+}
+
+enum ApprovalType {
+  BUDGET_ALLOCATION
+  PROJECT_APPROVAL
+  REPORT_APPROVAL
+  EXPENSE_APPROVAL
+  MOU_APPROVAL
+}
+
+model ApprovalWorkflow {
+  id              String         @id @default(uuid())
+  type            ApprovalType
+  entityType      String         // "Project", "Budget", "Report", etc.
+  entityId        String         // ID of the entity being approved
+  requesterId     String         // User who requested approval
+  approverId      String?        // User who should approve  
+  status          ApprovalStatus @default(PENDING)
+  requestedAt     DateTime       @default(now())
+  respondedAt     DateTime?
+  comments        String?
+  priority        Int            @default(0)  // Higher = more urgent
+
+  @@index([type])
+  @@index([status])
+  @@index([requesterId])
+  @@index([approverId])
+}
+
+// ============================================
+// MONTHLY REPORTS & AUTO-GENERATION
+// ============================================
+
+model MonthlyReport {
+  id              String   @id @default(uuid())
+  month           Int      // 1-12
+  year            Int
+  type            String   // "PROJECT_SUMMARY", "FINANCIAL", "STAFF", "COMBINED"
+  title           String
+  content         String?  // Markdown content
+  filePath        String?  // Generated PDF path
+  generatedAt     DateTime @default(now())
+  sentToEmails    String[] // List of email addresses report was sent to
+  sentAt          DateTime?
+  createdAt       DateTime @default(now())
+
+  @@unique([month, year, type])
+  @@index([year])
+  @@index([type])
+}
+
+// ============================================
+// PROJECT REPORTS (Quarterly/Half-yearly)
+// ============================================
+
+enum ReportType {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  HALF_YEARLY
+  ANNUAL
+  FINAL
+  PROGRESS
+  COMPLETION
+}
+
+model ProjectReport {
+  id              String         @id @default(uuid())
+  projectId       String
+  project         Project        @relation(fields: [projectId], references: [id])
+  reportType      ReportType
+  title           String
+  content         String         @db.Text  // Rich text content
+  period          String?        // e.g., "Q1 2025", "H1 2025"
+  submittedById   String
+  submittedBy     User           @relation("ReportSubmitter", fields: [submittedById], references: [id])
+  status          ApprovalStatus @default(PENDING)
+  approvedById    String?
+  approvedBy      User?          @relation("ReportApprover", fields: [approvedById], references: [id])
+  approvedAt      DateTime?
+  comments        String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  attachments     ReportAttachment[]
+
+  @@index([projectId])
+  @@index([reportType])
+  @@index([status])
+}
+
+model ReportAttachment {
+  id          String        @id @default(uuid())
+  reportId    String
+  report      ProjectReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  fileType    String        // PDF, PNG, JPG, DOC
+  fileName    String
+  filePath    String
+  fileSize    Int
+  createdAt   DateTime      @default(now())
+
+  @@index([reportId])
+}
+
+// ============================================
+// BUDGET REQUESTS & TRANSFERS
+// ============================================
+
+model BudgetRequest {
+  id              String         @id @default(uuid())
+  projectId       String
+  project         Project        @relation(fields: [projectId], references: [id])
+  requestedById   String
+  requestedBy     User           @relation("BudgetRequester", fields: [requestedById], references: [id])
+  category        BudgetCategory
+  amount          Float
+  currency        Currency       @default(INR)
+  justification   String         @db.Text
+  status          ApprovalStatus @default(PENDING)
+  approvedById    String?
+  approvedBy      User?          @relation("BudgetApprover", fields: [approvedById], references: [id])
+  approvedAmount  Float?
+  approvedAt      DateTime?
+  comments        String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([projectId])
+  @@index([status])
+  @@index([requestedById])
+}
+
+model BudgetTransfer {
+  id              String          @id @default(uuid())
+  fromProjectId   String?
+  toProjectId     String?
+  fromCategory    BudgetCategory?
+  toCategory      BudgetCategory?
+  amount          Float
+  amountINR       Float
+  reason          String          @db.Text
+  transferredById String
+  approvedById    String?
+  approvedAt      DateTime?
+  fiscalYear      String          // e.g., "2024-25"
+  createdAt       DateTime        @default(now())
+
+  @@index([fromProjectId])
+  @@index([toProjectId])
+  @@index([fiscalYear])
+}
+
+model BudgetArchive {
+  id              String   @id @default(uuid())
+  projectId       String?
+  fiscalYear      String
+  category        BudgetCategory
+  allocatedAmount Float
+  utilizedAmount  Float
+  carriedForward  Float    @default(0)
+  returnedToCSIR  Float    @default(0)
+  archivedAt      DateTime @default(now())
+
+  @@index([projectId])
+  @@index([fiscalYear])
+}
+
+// ============================================
+// RC AGENDA COMMENTS & FEEDBACK
+// ============================================
+
+model RCAgendaComment {
+  id          String       @id @default(uuid())
+  agendaId    String
+  agenda      RCAgendaItem @relation(fields: [agendaId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User         @relation(fields: [userId], references: [id])
+  content     String       @db.Text   // Rich text content
+  attachments Json?        // Array of attachment paths
+  isRecommendation Boolean @default(false)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([agendaId])
+  @@index([userId])
+}

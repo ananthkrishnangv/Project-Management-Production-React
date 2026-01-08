@@ -16,7 +16,11 @@ import {
     ArrowSyncRegular,
     EyeRegular,
     EyeOffRegular,
+    CallRegular,
+    ChatRegular,
 } from '@fluentui/react-icons';
+
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 interface UserProfile {
     id: string;
@@ -25,6 +29,13 @@ interface UserProfile {
     lastName: string;
     designation: string | null;
     phone: string | null;
+    mobileNumber: string | null;
+    landlineNumber: string | null;
+    whatsappNumber: string | null;
+    alternateEmail: string | null;
+    bio: string | null;
+    department: string | null;
+    employeeId: string | null;
     role: string;
     profileImage: string | null;
     twoFactorEnabled: boolean;
@@ -36,20 +47,32 @@ interface Project {
     id: string;
     code: string;
     title: string;
-    role: string;
     status: string;
+    category?: string;
+    role?: string;
+}
+
+interface ProjectMembership {
+    id: string;
+    role: string | null;
+    project: Project;
+}
+
+interface DocumentInfo {
+    id: string;
+    title: string;
+    fileName: string;
+    createdAt: string;
 }
 
 interface LoginHistory {
-    id: string;
-    timestamp: string;
-    ipAddress: string;
-    userAgent: string;
-    success: boolean;
+    createdAt: string;
+    ipAddress: string | null;
+    userAgent: string | null;
 }
 
 export default function ProfilePage() {
-    const { user, accessToken, logout } = useAuthStore();
+    const { user, accessToken, logout, setUser } = useAuthStore();
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -59,17 +82,24 @@ export default function ProfilePage() {
     const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
     const [profile, setProfile] = useState<UserProfile>({
-        id: user?.id || '',
-        email: user?.email || '',
-        firstName: user?.firstName || '',
-        lastName: user?.lastName || '',
-        designation: user?.designation || null,
-        phone: '',
-        role: user?.role || 'EMPLOYEE',
+        id: '',
+        email: '',
+        firstName: '',
+        lastName: '',
+        designation: null,
+        phone: null,
+        mobileNumber: null,
+        landlineNumber: null,
+        whatsappNumber: null,
+        alternateEmail: null,
+        bio: null,
+        department: null,
+        employeeId: null,
+        role: 'EMPLOYEE',
         profileImage: null,
         twoFactorEnabled: false,
-        lastLogin: new Date().toISOString(),
-        createdAt: '2024-01-15T10:30:00',
+        lastLogin: null,
+        createdAt: new Date().toISOString(),
     });
 
     const [passwordForm, setPasswordForm] = useState({
@@ -78,35 +108,103 @@ export default function ProfilePage() {
         confirmPassword: '',
     });
 
-    // Mock data
-    const [projects] = useState<Project[]>([
-        { id: '1', code: 'GAP-2024-SHM-001', title: 'Structural Health Monitoring', role: 'Project Head', status: 'ACTIVE' },
-        { id: '2', code: 'CNP-2024-TT-003', title: 'Technology Transfer Initiative', role: 'Team Member', status: 'ACTIVE' },
-    ]);
-
-    const [documents] = useState([
-        { id: '1', name: 'Q4 Progress Report.pdf', uploadedAt: '2024-12-28' },
-        { id: '2', name: 'Project Proposal.docx', uploadedAt: '2024-12-15' },
-    ]);
-
-    const [loginHistory] = useState<LoginHistory[]>([
-        { id: '1', timestamp: '2024-12-31T09:15:00', ipAddress: '10.10.100.45', userAgent: 'Chrome 120', success: true },
-        { id: '2', timestamp: '2024-12-30T14:20:00', ipAddress: '10.10.100.45', userAgent: 'Chrome 120', success: true },
-        { id: '3', timestamp: '2024-12-30T10:05:00', ipAddress: '192.168.1.100', userAgent: 'Firefox 121', success: false },
-    ]);
+    const [projects, setProjects] = useState<Project[]>([]);
+    const [projectMemberships, setProjectMemberships] = useState<ProjectMembership[]>([]);
+    const [documents, setDocuments] = useState<DocumentInfo[]>([]);
+    const [loginHistory, setLoginHistory] = useState<LoginHistory[]>([]);
 
     useEffect(() => {
-        const timer = setTimeout(() => setLoading(false), 500);
-        return () => clearTimeout(timer);
+        fetchProfile();
     }, []);
+
+    const fetchProfile = async () => {
+        try {
+            const res = await fetch(`${API_BASE}/users/profile`, {
+                headers: { 'Authorization': `Bearer ${accessToken}` },
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setProfile({
+                    id: data.id,
+                    email: data.email,
+                    firstName: data.firstName,
+                    lastName: data.lastName,
+                    designation: data.designation,
+                    phone: data.phone,
+                    mobileNumber: data.mobileNumber,
+                    landlineNumber: data.landlineNumber,
+                    whatsappNumber: data.whatsappNumber,
+                    alternateEmail: data.alternateEmail,
+                    bio: data.bio,
+                    department: data.department,
+                    employeeId: data.employeeId,
+                    role: data.role,
+                    profileImage: data.profileImage,
+                    twoFactorEnabled: data.twoFactorEnabled || false,
+                    lastLogin: data.lastLogin,
+                    createdAt: data.createdAt,
+                });
+                // Combine projects headed and project memberships
+                const headed = (data.projectsHeaded || []).map((p: Project) => ({
+                    ...p,
+                    role: 'Project Head'
+                }));
+                setProjects(headed);
+                setProjectMemberships(data.projectMembership || []);
+                setDocuments(data.documentsUploaded || []);
+                setLoginHistory(data.recentLogins || []);
+            }
+        } catch (error) {
+            console.error('Failed to fetch profile:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const handleSaveProfile = async () => {
         setSaving(true);
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        setMessage({ type: 'success', text: 'Profile updated successfully!' });
-        setEditing(false);
+        try {
+            const res = await fetch(`${API_BASE}/users/profile`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${accessToken}`,
+                },
+                body: JSON.stringify({
+                    firstName: profile.firstName,
+                    lastName: profile.lastName,
+                    phone: profile.phone,
+                    mobileNumber: profile.mobileNumber,
+                    landlineNumber: profile.landlineNumber,
+                    whatsappNumber: profile.whatsappNumber,
+                    designation: profile.designation,
+                    bio: profile.bio,
+                    department: profile.department,
+                }),
+            });
+
+            if (res.ok) {
+                const updatedUser = await res.json();
+                setMessage({ type: 'success', text: 'Profile updated successfully!' });
+                setEditing(false);
+                // Update the auth store with new user data
+                if (user) {
+                    setUser({
+                        ...user,
+                        firstName: updatedUser.firstName,
+                        lastName: updatedUser.lastName,
+                        designation: updatedUser.designation,
+                    });
+                }
+            } else {
+                const data = await res.json();
+                setMessage({ type: 'error', text: data.error || 'Failed to update profile' });
+            }
+        } catch {
+            setMessage({ type: 'error', text: 'Failed to update profile. Please try again.' });
+        }
         setSaving(false);
-        setTimeout(() => setMessage(null), 3000);
+        setTimeout(() => setMessage(null), 5000);
     };
 
     const handleChangePassword = async () => {
@@ -121,7 +219,7 @@ export default function ProfilePage() {
 
         setSaving(true);
         try {
-            const res = await fetch('/api/users/change-password', {
+            const res = await fetch(`${API_BASE}/users/change-password`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -152,11 +250,30 @@ export default function ProfilePage() {
     const roleLabels: Record<string, string> = {
         ADMIN: 'Administrator',
         DIRECTOR: 'Director',
+        DIRECTOR_GENERAL: 'Director General',
         SUPERVISOR: 'Head, BKMD',
         PROJECT_HEAD: 'Principal Investigator',
         EMPLOYEE: 'Scientist/Staff',
+        RC_MEMBER: 'Research Council Member',
         EXTERNAL_OWNER: 'External Partner',
     };
+
+    const departmentOptions = [
+        'ASTAR', 'WIND', 'SSL', 'SMD', 'CSMD', 'FSTD', 'BKMD', 'ICT', 'Admin', 'Other'
+    ];
+
+    // Combine all projects for display
+    const allProjects = [
+        ...projects,
+        ...projectMemberships.map(pm => ({
+            id: pm.project.id,
+            code: pm.project.code,
+            title: pm.project.title,
+            status: pm.project.status,
+            category: pm.project.category,
+            role: pm.role || 'Team Member',
+        }))
+    ];
 
     if (loading) {
         return (
@@ -182,7 +299,7 @@ export default function ProfilePage() {
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-display font-bold text-secondary-900">My Profile</h1>
-                    <p className="text-secondary-500 mt-1">Manage your account settings and preferences</p>
+                    <p className="text-secondary-500 mt-1">Manage your personal information and preferences</p>
                 </div>
             </div>
 
@@ -234,6 +351,9 @@ export default function ProfilePage() {
                                         Change Photo
                                     </button>
                                 )}
+                                {profile.employeeId && (
+                                    <p className="mt-2 text-sm text-secondary-500">ID: {profile.employeeId}</p>
+                                )}
                             </div>
 
                             {/* Form Fields */}
@@ -264,31 +384,30 @@ export default function ProfilePage() {
                                         <MailRegular className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-secondary-400" />
                                         <input
                                             type="email"
-                                            className="input-premium pl-12"
+                                            className="input-premium pl-12 bg-secondary-50"
                                             value={profile.email}
-                                            onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+                                            disabled
+                                        />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-secondary-700 mb-2">Alternate Email</label>
+                                    <div className="relative">
+                                        <MailRegular className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-secondary-400" />
+                                        <input
+                                            type="email"
+                                            className="input-premium pl-12"
+                                            value={profile.alternateEmail || ''}
+                                            placeholder="personal@email.com"
+                                            onChange={(e) => setProfile({ ...profile, alternateEmail: e.target.value })}
                                             disabled={!editing}
                                         />
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-secondary-700 mb-2">Phone</label>
-                                    <div className="relative">
-                                        <PhoneRegular className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-secondary-400" />
-                                        <input
-                                            type="tel"
-                                            className="input-premium pl-12"
-                                            value={profile.phone || ''}
-                                            placeholder="+91"
-                                            onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
-                                            disabled={!editing}
-                                        />
-                                    </div>
-                                </div>
-                                <div className="md:col-span-2">
                                     <label className="block text-sm font-medium text-secondary-700 mb-2">Designation</label>
                                     <div className="relative">
-                                        <BuildingRegular className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-secondary-400" />
+                                        <PersonRegular className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-secondary-400" />
                                         <input
                                             type="text"
                                             className="input-premium pl-12"
@@ -298,13 +417,99 @@ export default function ProfilePage() {
                                         />
                                     </div>
                                 </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-secondary-700 mb-2">Department</label>
+                                    <div className="relative">
+                                        <BuildingRegular className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-secondary-400" />
+                                        {editing ? (
+                                            <select
+                                                className="input-premium pl-12"
+                                                value={profile.department || ''}
+                                                onChange={(e) => setProfile({ ...profile, department: e.target.value })}
+                                            >
+                                                <option value="">Select Department</option>
+                                                {departmentOptions.map(opt => (
+                                                    <option key={opt} value={opt}>{opt}</option>
+                                                ))}
+                                            </select>
+                                        ) : (
+                                            <input
+                                                type="text"
+                                                className="input-premium pl-12"
+                                                value={profile.department || ''}
+                                                disabled
+                                            />
+                                        )}
+                                    </div>
+                                </div>
                             </div>
+                        </div>
+
+                        {/* Bio */}
+                        <div className="mt-6">
+                            <label className="block text-sm font-medium text-secondary-700 mb-2">Bio / About</label>
+                            <textarea
+                                className="input-premium h-24 resize-none"
+                                value={profile.bio || ''}
+                                placeholder="A brief description about yourself..."
+                                onChange={(e) => setProfile({ ...profile, bio: e.target.value })}
+                                disabled={!editing}
+                            />
                         </div>
 
                         {/* Role Badge */}
                         <div className="mt-6 p-4 bg-secondary-50 rounded-xl">
                             <p className="text-sm text-secondary-500">System Role</p>
-                            <p className="font-semibold text-secondary-900">{roleLabels[profile.role]}</p>
+                            <p className="font-semibold text-secondary-900">{roleLabels[profile.role] || profile.role}</p>
+                        </div>
+                    </div>
+
+                    {/* Contact Information */}
+                    <div className="premium-card p-6">
+                        <h3 className="text-lg font-semibold text-secondary-900 mb-4">Contact Information</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-secondary-700 mb-2">Mobile Number</label>
+                                <div className="relative">
+                                    <PhoneRegular className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-secondary-400" />
+                                    <input
+                                        type="tel"
+                                        className="input-premium pl-12"
+                                        value={profile.mobileNumber || profile.phone || ''}
+                                        placeholder="+91"
+                                        onChange={(e) => setProfile({ ...profile, mobileNumber: e.target.value })}
+                                        disabled={!editing}
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-secondary-700 mb-2">Landline</label>
+                                <div className="relative">
+                                    <CallRegular className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-secondary-400" />
+                                    <input
+                                        type="tel"
+                                        className="input-premium pl-12"
+                                        value={profile.landlineNumber || ''}
+                                        placeholder="044-XXXXXXXX"
+                                        onChange={(e) => setProfile({ ...profile, landlineNumber: e.target.value })}
+                                        disabled={!editing}
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-secondary-700 mb-2">WhatsApp Number</label>
+                                <div className="relative">
+                                    <ChatRegular className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-success-500" />
+                                    <input
+                                        type="tel"
+                                        className="input-premium pl-12"
+                                        value={profile.whatsappNumber || ''}
+                                        placeholder="+91"
+                                        onChange={(e) => setProfile({ ...profile, whatsappNumber: e.target.value })}
+                                        disabled={!editing}
+                                    />
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -392,17 +597,25 @@ export default function ProfilePage() {
                     <div className="premium-card p-6">
                         <div className="flex items-center gap-3 mb-4">
                             <FolderRegular className="w-5 h-5 text-primary-600" />
-                            <h3 className="font-semibold text-secondary-900">My Projects</h3>
+                            <h3 className="font-semibold text-secondary-900">My Projects ({allProjects.length})</h3>
                         </div>
-                        <div className="space-y-3">
-                            {projects.map(project => (
-                                <div key={project.id} className="p-3 bg-secondary-50 rounded-xl">
+                        <div className="space-y-3 max-h-80 overflow-y-auto">
+                            {allProjects.map(project => (
+                                <div key={project.id} className="p-3 bg-secondary-50 rounded-xl hover:bg-secondary-100 transition-colors">
                                     <p className="font-mono text-sm text-primary-600">{project.code}</p>
                                     <p className="text-sm font-medium text-secondary-900 truncate">{project.title}</p>
-                                    <p className="text-xs text-secondary-500">{project.role}</p>
+                                    <div className="flex items-center justify-between mt-1">
+                                        <span className="text-xs text-secondary-500">{project.role}</span>
+                                        <span className={`text-xs px-2 py-0.5 rounded-full ${project.status === 'ACTIVE' ? 'bg-success-100 text-success-700' :
+                                                project.status === 'COMPLETED' ? 'bg-primary-100 text-primary-700' :
+                                                    'bg-secondary-100 text-secondary-700'
+                                            }`}>
+                                            {project.status}
+                                        </span>
+                                    </div>
                                 </div>
                             ))}
-                            {projects.length === 0 && (
+                            {allProjects.length === 0 && (
                                 <p className="text-sm text-secondary-500 text-center py-4">No projects assigned</p>
                             )}
                         </div>
@@ -419,10 +632,14 @@ export default function ProfilePage() {
                                 <div key={doc.id} className="flex items-center justify-between p-2 hover:bg-secondary-50 rounded-lg">
                                     <div className="flex items-center gap-2 truncate">
                                         <DocumentRegular className="w-4 h-4 text-secondary-400 flex-shrink-0" />
-                                        <span className="text-sm text-secondary-700 truncate">{doc.name}</span>
+                                        <span className="text-sm text-secondary-700 truncate">{doc.title || doc.fileName}</span>
                                     </div>
+                                    <span className="text-xs text-secondary-400">{new Date(doc.createdAt).toLocaleDateString('en-IN')}</span>
                                 </div>
                             ))}
+                            {documents.length === 0 && (
+                                <p className="text-sm text-secondary-500 text-center py-4">No documents uploaded</p>
+                            )}
                         </div>
                     </div>
 
@@ -433,23 +650,20 @@ export default function ProfilePage() {
                             <h3 className="font-semibold text-secondary-900">Recent Activity</h3>
                         </div>
                         <div className="space-y-3">
-                            {loginHistory.slice(0, 5).map(login => (
-                                <div key={login.id} className="flex items-center gap-3">
-                                    {login.success ? (
-                                        <CheckmarkCircleRegular className="w-4 h-4 text-success-500" />
-                                    ) : (
-                                        <DismissCircleRegular className="w-4 h-4 text-danger-500" />
-                                    )}
+                            {loginHistory.slice(0, 5).map((login, idx) => (
+                                <div key={idx} className="flex items-center gap-3">
+                                    <CheckmarkCircleRegular className="w-4 h-4 text-success-500" />
                                     <div className="flex-1 min-w-0">
-                                        <p className="text-sm text-secondary-700">
-                                            {login.success ? 'Login successful' : 'Failed attempt'}
-                                        </p>
+                                        <p className="text-sm text-secondary-700">Login successful</p>
                                         <p className="text-xs text-secondary-400">
-                                            {new Date(login.timestamp).toLocaleString('en-IN')}
+                                            {new Date(login.createdAt).toLocaleString('en-IN')}
                                         </p>
                                     </div>
                                 </div>
                             ))}
+                            {loginHistory.length === 0 && (
+                                <p className="text-sm text-secondary-500 text-center py-4">No recent activity</p>
+                            )}
                         </div>
                     </div>
                 </div>

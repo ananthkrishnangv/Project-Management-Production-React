@@ -264,17 +264,24 @@ router.post('/change-password', async (req: AuthenticatedRequest, res: Response)
 router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
     try {
         const userId = req.user?.userId;
-        const { firstName, lastName, phone, designation } = req.body;
+        const { firstName, lastName, phone, mobileNumber, landlineNumber, whatsappNumber, designation, bio, department } = req.body;
 
         // Validate input
         const updateSchema = z.object({
             firstName: z.string().min(1).max(100).optional(),
             lastName: z.string().min(1).max(100).optional(),
             phone: z.string().max(20).optional().nullable(),
+            mobileNumber: z.string().max(20).optional().nullable(),
+            landlineNumber: z.string().max(20).optional().nullable(),
+            whatsappNumber: z.string().max(20).optional().nullable(),
             designation: z.string().max(100).optional().nullable(),
+            bio: z.string().max(2000).optional().nullable(),
+            department: z.string().max(50).optional().nullable(),
         });
 
-        const validatedData = updateSchema.parse({ firstName, lastName, phone, designation });
+        const validatedData = updateSchema.parse({
+            firstName, lastName, phone, mobileNumber, landlineNumber, whatsappNumber, designation, bio, department
+        });
 
         const user = await prisma.user.update({
             where: { id: userId },
@@ -286,6 +293,11 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
                 lastName: true,
                 designation: true,
                 phone: true,
+                mobileNumber: true,
+                landlineNumber: true,
+                whatsappNumber: true,
+                bio: true,
+                department: true,
                 role: true,
                 profileImage: true,
                 lastLogin: true,
@@ -329,9 +341,17 @@ router.get('/profile', async (req: AuthenticatedRequest, res: Response) => {
                 lastName: true,
                 designation: true,
                 phone: true,
+                mobileNumber: true,
+                landlineNumber: true,
+                whatsappNumber: true,
+                alternateEmail: true,
+                bio: true,
+                department: true,
+                employeeId: true,
                 role: true,
                 profileImage: true,
                 isActive: true,
+                twoFactorEnabled: true,
                 lastLogin: true,
                 createdAt: true,
                 projectsHeaded: {

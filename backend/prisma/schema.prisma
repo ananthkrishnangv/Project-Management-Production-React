@@ -106,6 +106,8 @@ model User {
   designation       String?
   phone             String?
   mobileNumber      String?
+  landlineNumber    String?   // Office landline
+  whatsappNumber    String?   // WhatsApp contact number
   alternateEmail    String?
   role              UserRole  @default(EMPLOYEE)
   isActive          Boolean   @default(true)

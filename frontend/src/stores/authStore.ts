@@ -94,12 +94,22 @@ export const useAuthStore = create<AuthState>()(
                     // Ignore logout errors
                 }
 
+                // Clear state
                 set({
                     user: null,
                     accessToken: null,
                     refreshToken: null,
                     isAuthenticated: false,
                     error: null,
+                });
+
+                // Clear all storage
+                localStorage.removeItem('csir-serc-auth');
+                sessionStorage.clear();
+
+                // Clear all cookies
+                document.cookie.split(';').forEach((c) => {
+                    document.cookie = c.replace(/^ +/, '').replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/');
                 });
             },
 

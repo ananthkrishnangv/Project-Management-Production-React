@@ -17,6 +17,7 @@ import {
     DismissRegular,
     AlertRegular,
     ChevronDownRegular,
+    ArrowSyncRegular,
     BuildingMultipleRegular,
     ArrowUploadRegular,
     SendRegular,
@@ -290,6 +291,15 @@ export default function DashboardLayout() {
 
                     {/* Right side actions */}
                     <div className="flex items-center gap-3">
+                        {/* Refresh Page Button */}
+                        <button
+                            onClick={() => window.location.reload()}
+                            className="p-2 rounded-lg hover:bg-secondary-100 transition-colors"
+                            title="Refresh page"
+                        >
+                            <ArrowSyncRegular className="w-5 h-5 text-secondary-600" />
+                        </button>
+
                         {/* Push Update Button (for Head, BKMD and above) */}
                         {canPushUpdates && (
                             <button

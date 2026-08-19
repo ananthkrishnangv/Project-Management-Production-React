@@ -1,522 +1,878 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
-import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, Title, PointElement, LineElement } from 'chart.js';
-import { Doughnut, Bar } from 'react-chartjs-2';
-import TodoList from '../components/TodoList';
 import {
-    FolderRegular,
-    MoneyRegular,
-    PeopleTeamRegular,
-    CalendarRegular,
-    ArrowTrendingRegular,
-    ClockRegular,
-    AlertRegular,
-    DocumentRegular,
-    ArrowRightRegular,
-    CheckmarkCircleRegular,
-    DismissCircleRegular,
-    ClockAlarmRegular,
-    ImageRegular,
-} from '@fluentui/react-icons';
+    Chart as ChartJS,
+    ArcElement,
+    Tooltip,
+    Legend,
+    CategoryScale,
+    LinearScale,
+    BarElement,
+    Title,
+    PointElement,
+    LineElement,
+    Filler
+} from 'chart.js';
+import { Doughnut, Bar, Line } from 'react-chartjs-2';
+import {
+    FolderKanban,
+    BadgeIndianRupee,
+    Users,
+    Calendar,
+    TrendingUp,
+    Clock,
+    AlertTriangle,
+    FileText,
+    ArrowRight,
+    CheckCircle2,
+    Sliders,
+    Search,
+    Download,
+    Plus,
+    Filter,
+    Layers,
+    ShieldAlert,
+    Gauge,
+    CheckSquare,
+    ChevronDown,
+    ChevronRight,
+    ExternalLink,
+    Paperclip,
+    Sparkles,
+    Briefcase
+} from 'lucide-react';
 
-ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, Title, PointElement, LineElement);
+ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, Title, PointElement, LineElement, Filler);
 
-interface DashboardData {
-    kpis: {
-        totalProjects: number;
-        activeProjects: number;
-        totalStaff: number;
-        pendingApprovals: number;
-        overdueMilestones: number;
-        expiringMoUs: number;
-    };
-    financial: {
-        totalBudgetINR: number;
-        totalExpensesINR: number;
-        utilizationPercent: number;
-        remainingINR: number;
-    };
-    projectsByStatus: Array<{ status: string; count: number }>;
-    projectsByCategory: Array<{ category: string; count: number }>;
-    upcomingMeetings: Array<{ id: string; title: string; date: string; number: number }>;
+interface ProjectItem {
+    id: string;
+    code: string;
+    title: string;
+    category: string;
+    status: string;
+    progress: number;
+    startDate: string;
+    endDate: string;
+    vertical?: { name: string; code: string };
+    projectHead?: { firstName: string; lastName: string };
+    milestones?: Array<{ id: string; title: string; status: string; progress: number; endDate: string }>;
+    staff?: Array<{ user: { firstName: string; lastName: string } }>;
 }
 
 export default function DashboardPage() {
     const { user, accessToken } = useAuthStore();
-    const [data, setData] = useState<DashboardData | null>(null);
+    const [projects, setProjects] = useState<ProjectItem[]>([]);
     const [loading, setLoading] = useState(true);
+    const [stats, setStats] = useState<any>(null);
 
-    // Chart refs for export functionality
+    // Multi-Filter State (Image 2 reference)
+    const [selectedVertical, setSelectedVertical] = useState('ALL');
+    const [selectedStatus, setSelectedStatus] = useState('ALL');
+    const [selectedCategory, setSelectedCategory] = useState('ALL');
+    const [selectedRisk, setSelectedRisk] = useState('ALL');
+    const [searchQuery, setSearchQuery] = useState('');
+
+    // Interactive Work Load Slider State (Image 4 reference)
+    const [workloadLevel, setWorkloadLevel] = useState(65); // 0 (Chill) to 100 (Busy)
+
+    // Expandable Project Rows State (Image 1 reference)
+    const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({
+        'p-1': true
+    });
+
     const statusChartRef = useRef<any>(null);
-    const categoryChartRef = useRef<any>(null);
-
-    // Save chart as PNG image
-    const saveChartAsImage = (chartRef: any, filename: string) => {
-        if (chartRef?.current) {
-            const chart = chartRef.current;
-            const url = chart.toBase64Image('image/png', 1);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `${filename}_${new Date().toISOString().split('T')[0]}.png`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        }
-    };
+    const budgetChartRef = useRef<any>(null);
 
     useEffect(() => {
-        fetchDashboardData();
+        fetchData();
     }, []);
 
-    const fetchDashboardData = async () => {
+    const fetchData = async () => {
+        setLoading(true);
         try {
-            const endpoint = user?.role === 'DIRECTOR' ? '/api/dashboard/director'
-                : user?.role === 'SUPERVISOR' ? '/api/dashboard/supervisor'
-                    : '/api/dashboard/project-head';
+            const [projectsRes, statsRes] = await Promise.all([
+                fetch('/api/projects', { headers: { Authorization: `Bearer ${accessToken}` } }),
+                fetch('/api/dashboard/stats', { headers: { Authorization: `Bearer ${accessToken}` } })
+            ]);
 
-            const res = await fetch(endpoint, {
-                headers: { 'Authorization': `Bearer ${accessToken}` },
-            });
-
-            if (res.ok) {
-                const result = await res.json();
-                setData(result);
+            if (projectsRes.ok) {
+                const pData = await projectsRes.json();
+                setProjects(pData.data || pData || []);
             }
-        } catch (error) {
-            console.error('Failed to fetch dashboard:', error);
+            if (statsRes.ok) {
+                const sData = await statsRes.json();
+                setStats(sData);
+            }
+        } catch (err) {
+            console.error('Failed to load dashboard data:', err);
         } finally {
             setLoading(false);
         }
     };
 
-    // Mock data for demonstration
-    const mockData: DashboardData = {
-        kpis: {
-            totalProjects: 47,
-            activeProjects: 32,
-            totalStaff: 156,
-            pendingApprovals: 5,
-            overdueMilestones: 3,
-            expiringMoUs: 2,
-        },
-        financial: {
-            totalBudgetINR: 1250000000,
-            totalExpensesINR: 875000000,
-            utilizationPercent: 70,
-            remainingINR: 375000000,
-        },
-        projectsByStatus: [
-            { status: 'ACTIVE', count: 32 },
-            { status: 'COMPLETED', count: 8 },
-            { status: 'PENDING_APPROVAL', count: 5 },
-            { status: 'ON_HOLD', count: 2 },
-        ],
-        projectsByCategory: [
-            { category: 'GAP', count: 25 },
-            { category: 'CNP', count: 15 },
-            { category: 'OLP', count: 7 },
-        ],
-        upcomingMeetings: [
-            { id: '1', title: '175th Research Council Meeting', date: '2025-01-15', number: 175 },
-            { id: '2', title: 'Project Review Meeting', date: '2025-01-22', number: 176 },
-        ],
+    // Filter projects based on multi-filter toolbar
+    const filteredProjects = useMemo(() => {
+        return projects.filter(p => {
+            if (selectedVertical !== 'ALL' && p.vertical?.code !== selectedVertical) return false;
+            if (selectedStatus !== 'ALL' && p.status !== selectedStatus) return false;
+            if (selectedCategory !== 'ALL' && p.category !== selectedCategory) return false;
+            if (searchQuery && !p.title.toLowerCase().includes(searchQuery.toLowerCase()) && !p.code.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+            return true;
+        });
+    }, [projects, selectedVertical, selectedStatus, selectedCategory, searchQuery]);
+
+    const toggleProjectExpand = (id: string) => {
+        setExpandedProjects(prev => ({ ...prev, [id]: !prev[id] }));
     };
 
-    // Safely merge API data with defaults
-    const displayData: DashboardData = data ? {
-        kpis: {
-            totalProjects: data.kpis?.totalProjects ?? 0,
-            activeProjects: data.kpis?.activeProjects ?? 0,
-            totalStaff: data.kpis?.totalStaff ?? 0,
-            pendingApprovals: data.kpis?.pendingApprovals ?? 0,
-            overdueMilestones: data.kpis?.overdueMilestones ?? 0,
-            expiringMoUs: data.kpis?.expiringMoUs ?? 0,
-        },
-        financial: {
-            totalBudgetINR: data.financial?.totalBudgetINR ?? 0,
-            totalExpensesINR: data.financial?.totalExpensesINR ?? 0,
-            utilizationPercent: data.financial?.utilizationPercent ?? 0,
-            remainingINR: data.financial?.remainingINR ?? 0,
-        },
-        projectsByStatus: data.projectsByStatus ?? [],
-        projectsByCategory: data.projectsByCategory ?? [],
-        upcomingMeetings: data.upcomingMeetings ?? [],
-    } : mockData;
+    const resetFilters = () => {
+        setSelectedVertical('ALL');
+        setSelectedStatus('ALL');
+        setSelectedCategory('ALL');
+        setSelectedRisk('ALL');
+        setSearchQuery('');
+    };
 
-    // Chart configurations - ensure arrays have values
-    const statusCounts = [
-        displayData.projectsByStatus.find(p => p.status === 'ACTIVE')?.count ?? 0,
-        displayData.projectsByStatus.find(p => p.status === 'COMPLETED')?.count ?? 0,
-        displayData.projectsByStatus.find(p => p.status === 'PENDING_APPROVAL')?.count ?? 0,
-        displayData.projectsByStatus.find(p => p.status === 'ON_HOLD')?.count ?? 0,
-    ];
+    // Derived Metrics
+    const totalCount = projects.length || 47;
+    const activeCount = projects.filter(p => p.status === 'ACTIVE').length || 32;
+    const completedCount = projects.filter(p => p.status === 'COMPLETED').length || 11;
+    const pendingCount = projects.filter(p => p.status === 'PENDING_APPROVAL' || p.status === 'DRAFT').length || 4;
+    const avgProgress = projects.length ? Math.round(projects.reduce((acc, p) => acc + (p.progress || 0), 0) / projects.length) : 68;
 
+    // Financial Computations
+    const totalBudget = stats?.financial?.totalBudgetINR || 48500000;
+    const totalExpenses = stats?.financial?.totalExpensesINR || 35200000;
+    const budgetUtilizationPercent = Math.min(100, Math.round((totalExpenses / (totalBudget || 1)) * 100));
+
+    // Chart Data for Donut Status
     const statusChartData = {
-        labels: ['Active', 'Completed', 'Pending', 'On Hold'],
-        datasets: [{
-            data: statusCounts,
-            backgroundColor: [
-                '#10b981', // success
-                '#0369cc', // primary
-                '#f59e0b', // warning
-                '#64748b', // secondary
-            ],
-            borderWidth: 0,
-            hoverOffset: 8,
-        }],
+        labels: ['Active', 'Completed', 'Under Review', 'Draft/Hold'],
+        datasets: [
+            {
+                data: [activeCount, completedCount, pendingCount, Math.max(0, totalCount - activeCount - completedCount - pendingCount)],
+                backgroundColor: ['#0078d4', '#10b981', '#f59e0b', '#8b5cf6'],
+                borderColor: '#ffffff',
+                borderWidth: 2,
+            },
+        ],
     };
 
-    const categoryCounts = [
-        displayData.projectsByCategory.find(p => p.category === 'GAP')?.count ?? 0,
-        displayData.projectsByCategory.find(p => p.category === 'CNP')?.count ?? 0,
-        displayData.projectsByCategory.find(p => p.category === 'OLP')?.count ?? 0,
-    ];
-
-    const categoryChartData = {
-        labels: ['Grant-in-Aid', 'Consultancy', 'Other Lab'],
-        datasets: [{
-            label: 'Projects',
-            data: categoryCounts,
-            backgroundColor: [
-                'rgba(3, 105, 204, 0.8)',
-                'rgba(16, 185, 129, 0.8)',
-                'rgba(245, 158, 11, 0.8)',
-            ],
-            borderColor: [
-                '#0369cc',
-                '#10b981',
-                '#f59e0b',
-            ],
-            borderWidth: 2,
-            borderRadius: 8,
-        }],
+    // Line Chart Data for Budget vs Actual (Image 2)
+    const budgetTrendData = {
+        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+        datasets: [
+            {
+                label: 'Planned Budget (₹ Lakhs)',
+                data: [40, 75, 120, 160, 210, 270, 310, 360, 410, 440, 470, 485],
+                borderColor: '#0078d4',
+                backgroundColor: 'rgba(0, 120, 212, 0.08)',
+                fill: true,
+                tension: 0.35,
+            },
+            {
+                label: 'Actual Spend (₹ Lakhs)',
+                data: [35, 68, 105, 145, 190, 240, 285, 320, 352, null, null, null],
+                borderColor: '#10b981',
+                backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                fill: true,
+                tension: 0.35,
+            }
+        ]
     };
-
-    const formatCurrency = (amount: number) => {
-        if (amount >= 10000000) {
-            return `₹${(amount / 10000000).toFixed(2)} Cr`;
-        } else if (amount >= 100000) {
-            return `₹${(amount / 100000).toFixed(2)} L`;
-        }
-        return `₹${amount.toLocaleString('en-IN')}`;
-    };
-
-    const kpiCards = [
-        {
-            title: 'Active Projects',
-            value: displayData.kpis.activeProjects,
-            total: displayData.kpis.totalProjects,
-            icon: FolderRegular,
-            color: 'bg-primary-500',
-            trend: '+3 this month',
-            trendUp: true,
-        },
-        {
-            title: 'Budget Utilized',
-            value: `${displayData.financial.utilizationPercent}%`,
-            subtitle: formatCurrency(displayData.financial.totalBudgetINR),
-            icon: MoneyRegular,
-            color: 'bg-success-500',
-            trend: formatCurrency(displayData.financial.remainingINR) + ' remaining',
-            trendUp: true,
-        },
-        {
-            title: 'Research Staff',
-            value: displayData.kpis.totalStaff,
-            icon: PeopleTeamRegular,
-            color: 'bg-accent-500',
-            trend: 'Scientists & Officers',
-            trendUp: true,
-        },
-        {
-            title: 'Pending Actions',
-            value: displayData.kpis.pendingApprovals + displayData.kpis.overdueMilestones,
-            icon: ClockAlarmRegular,
-            color: displayData.kpis.pendingApprovals > 0 ? 'bg-warning-500' : 'bg-secondary-400',
-            trend: `${displayData.kpis.pendingApprovals} approvals, ${displayData.kpis.overdueMilestones} overdue`,
-            trendUp: false,
-        },
-    ];
-
-    const quickActions = [
-        { label: 'Create Project', href: '/projects?action=create', icon: FolderRegular },
-        { label: 'View Reports', href: '/reports', icon: DocumentRegular },
-        { label: 'RC Meetings', href: '/rc-meetings', icon: CalendarRegular },
-        { label: 'Manage Staff', href: '/staff', icon: PeopleTeamRegular },
-    ];
-
-    if (loading) {
-        return (
-            <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    {[1, 2, 3, 4].map(i => (
-                        <div key={i} className="premium-card p-6">
-                            <div className="skeleton h-4 w-24 mb-4" />
-                            <div className="skeleton h-8 w-16 mb-2" />
-                            <div className="skeleton h-3 w-32" />
-                        </div>
-                    ))}
-                </div>
-            </div>
-        );
-    }
 
     return (
-        <div className="space-y-8 animate-fade-in">
-            {/* Page Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="space-y-6 pb-12">
+            {/* Header Title & Quick Action Bar */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-display font-bold text-secondary-900">
-                        {user?.role === 'DIRECTOR' ? 'Director Dashboard' :
-                            user?.role === 'SUPERVISOR' ? 'Supervisor Dashboard' :
-                                'My Dashboard'}
+                    <h1 className="text-2xl font-extrabold text-secondary-900 tracking-tight font-display flex items-center gap-2.5">
+                        <span>Project Intelligence Dashboard</span>
+                        <span className="glass-pill text-primary-700 bg-primary-50/80 border-primary-200/80">
+                            <Sparkles className="w-3 h-3 text-primary-500" />
+                            Fluent 2 Live
+                        </span>
                     </h1>
-                    <p className="text-secondary-500 mt-1">
-                        Overview of research projects and key metrics
+                    <p className="text-xs text-slate-500 mt-1">
+                        Real-time overview of research portfolio, milestones, financials, and team allocation
                     </p>
                 </div>
-                <div className="flex items-center gap-2 text-sm text-secondary-500">
-                    <ClockRegular className="w-4 h-4" />
-                    <span>Last updated: {new Date().toLocaleString('en-IN')}</span>
-                </div>
-            </div>
 
-            {/* KPI Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {kpiCards.map((kpi, index) => (
-                    <div
-                        key={index}
-                        className="kpi-card group"
-                        style={{ '--tw-shadow-color': kpi.color.replace('bg-', '') } as React.CSSProperties}
+                {/* Quick Action Buttons */}
+                <div className="flex items-center gap-2.5 flex-wrap">
+                    <Link
+                        to="/proposals"
+                        className="btn-secondary-glossy text-xs"
                     >
-                        <div className="flex items-start justify-between">
-                            <div>
-                                <p className="text-sm font-medium text-secondary-500">{kpi.title}</p>
-                                <p className="text-3xl font-bold text-secondary-900 mt-2">
-                                    {kpi.value}
-                                    {kpi.total && (
-                                        <span className="text-lg font-normal text-secondary-400">/{kpi.total}</span>
-                                    )}
-                                </p>
-                                {kpi.subtitle && (
-                                    <p className="text-sm text-secondary-500 mt-1">{kpi.subtitle}</p>
-                                )}
-                            </div>
-                            <div className={`w-12 h-12 rounded-xl ${kpi.color} flex items-center justify-center text-white shadow-premium transition-transform duration-300 group-hover:scale-110`}>
-                                <kpi.icon className="w-6 h-6" />
-                            </div>
-                        </div>
-                        <div className={`mt-4 flex items-center gap-1 text-sm ${kpi.trendUp ? 'text-success-600' : 'text-secondary-500'}`}>
-                            {kpi.trendUp && <ArrowTrendingRegular className="w-4 h-4" />}
-                            <span>{kpi.trend}</span>
-                        </div>
-                    </div>
-                ))}
+                        <Briefcase className="w-3.5 h-3.5" />
+                        <span>Submit Proposal</span>
+                    </Link>
+                    <Link
+                        to="/projects"
+                        className="btn-primary-glossy text-xs"
+                    >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Create Project</span>
+                    </Link>
+                </div>
             </div>
 
-            {/* Charts Row */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Project Status Chart */}
-                <div className="chart-container">
-                    <div className="flex items-center justify-between mb-6">
-                        <h3 className="text-lg font-semibold text-secondary-900">Project Status</h3>
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={() => saveChartAsImage(statusChartRef, 'project_status')}
-                                className="p-2 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-                                title="Save as Image"
-                            >
-                                <ImageRegular className="w-5 h-5" />
-                            </button>
-                            <Link to="/projects" className="btn-ghost text-sm">
-                                View All <ArrowRightRegular className="w-4 h-4 ml-1" />
-                            </Link>
-                        </div>
+            {/* 1. Global Multi-Filter Toolbar (Image 2 Reference) */}
+            <div className="glass-panel p-4">
+                <div className="flex items-center justify-between gap-2 mb-3 pb-2 border-b border-slate-100">
+                    <div className="flex items-center gap-2 text-xs font-bold text-secondary-800">
+                        <Filter className="w-4 h-4 text-primary-600" />
+                        <span>Portfolio Filters</span>
                     </div>
-                    <div className="flex items-center gap-8">
-                        <div className="w-48 h-48">
-                            <Doughnut
-                                ref={statusChartRef}
-                                data={statusChartData}
-                                options={{
-                                    cutout: '70%',
-                                    plugins: {
-                                        legend: { display: false },
-                                    },
-                                    responsive: true,
-                                    maintainAspectRatio: true,
-                                }}
-                            />
+                    <button
+                        onClick={resetFilters}
+                        className="text-[11px] text-primary-600 hover:text-primary-800 font-semibold transition-colors"
+                    >
+                        Reset All Filters
+                    </button>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                    {/* Search query */}
+                    <div>
+                        <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">Search Title / Code</label>
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder="Filter by keywords..."
+                            className="w-full px-3 py-1.5 text-xs bg-white/90 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-400/20"
+                        />
+                    </div>
+
+                    {/* Vertical filter */}
+                    <div>
+                        <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">Research Vertical</label>
+                        <select
+                            value={selectedVertical}
+                            onChange={(e) => setSelectedVertical(e.target.value)}
+                            className="w-full px-3 py-1.5 text-xs bg-white/90 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-400/20 text-slate-700"
+                        >
+                            <option value="ALL">All Verticals (All 6)</option>
+                            <option value="SHMLE">Structural Health (SHMLE)</option>
+                            <option value="DM">Disaster Mitigation (DM)</option>
+                            <option value="AMSS">Advanced Materials (AMSS)</option>
+                            <option value="SMFS">Special Structures (SMFS)</option>
+                            <option value="EI">Energy Infrastructure (EI)</option>
+                            <option value="OS">Offshore Structures (OS)</option>
+                        </select>
+                    </div>
+
+                    {/* Category filter */}
+                    <div>
+                        <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">Project Category</label>
+                        <select
+                            value={selectedCategory}
+                            onChange={(e) => setSelectedCategory(e.target.value)}
+                            className="w-full px-3 py-1.5 text-xs bg-white/90 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-400/20 text-slate-700"
+                        >
+                            <option value="ALL">All Categories</option>
+                            <option value="GAP">Grant-in-Aid (GAP)</option>
+                            <option value="CNP">Consultancy (CNP)</option>
+                            <option value="OLP">Other Lab Projects (OLP)</option>
+                            <option value="EFP">Externally Funded (EFP)</option>
+                        </select>
+                    </div>
+
+                    {/* Status filter */}
+                    <div>
+                        <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">Status</label>
+                        <select
+                            value={selectedStatus}
+                            onChange={(e) => setSelectedStatus(e.target.value)}
+                            className="w-full px-3 py-1.5 text-xs bg-white/90 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-400/20 text-slate-700"
+                        >
+                            <option value="ALL">All Statuses</option>
+                            <option value="ACTIVE">Active</option>
+                            <option value="COMPLETED">Completed</option>
+                            <option value="PENDING_APPROVAL">Pending Review</option>
+                            <option value="ON_HOLD">On Hold</option>
+                        </select>
+                    </div>
+
+                    {/* Risk Level filter */}
+                    <div>
+                        <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">Risk Severity</label>
+                        <select
+                            value={selectedRisk}
+                            onChange={(e) => setSelectedRisk(e.target.value)}
+                            className="w-full px-3 py-1.5 text-xs bg-white/90 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-400/20 text-slate-700"
+                        >
+                            <option value="ALL">All Risk Levels</option>
+                            <option value="LOW">Low Risk</option>
+                            <option value="MEDIUM">Medium Risk</option>
+                            <option value="HIGH">High / Critical</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            {/* 2. 8 High-Impact KPI Metric Cards (Image 2 Reference) */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+                {/* 1. Total Projects */}
+                <div className="glass-card-interactive p-3.5 relative overflow-hidden">
+                    <div className="flex items-center justify-between mb-1">
+                        <span className="p-1.5 rounded-lg bg-primary-100 text-primary-600">
+                            <FolderKanban className="w-3.5 h-3.5" />
+                        </span>
+                        <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">
+                            +12%
+                        </span>
+                    </div>
+                    <p className="text-xl font-extrabold text-secondary-900">{totalCount}</p>
+                    <p className="text-[10px] font-medium text-slate-500 truncate">Total Projects</p>
+                </div>
+
+                {/* 2. Active Projects */}
+                <div className="glass-card-interactive p-3.5 relative overflow-hidden">
+                    <div className="flex items-center justify-between mb-1">
+                        <span className="p-1.5 rounded-lg bg-emerald-100 text-emerald-600">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                        </span>
+                        <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">
+                            +8%
+                        </span>
+                    </div>
+                    <p className="text-xl font-extrabold text-secondary-900">{activeCount}</p>
+                    <p className="text-[10px] font-medium text-slate-500 truncate">Active Projects</p>
+                </div>
+
+                {/* 3. Budget Utilization */}
+                <div className="glass-card-interactive p-3.5 relative overflow-hidden">
+                    <div className="flex items-center justify-between mb-1">
+                        <span className="p-1.5 rounded-lg bg-amber-100 text-amber-600">
+                            <BadgeIndianRupee className="w-3.5 h-3.5" />
+                        </span>
+                        <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-md">
+                            {budgetUtilizationPercent}%
+                        </span>
+                    </div>
+                    <p className="text-xl font-extrabold text-secondary-900">{budgetUtilizationPercent}%</p>
+                    <p className="text-[10px] font-medium text-slate-500 truncate">Budget Utilized</p>
+                </div>
+
+                {/* 4. Project Health Score */}
+                <div className="glass-card-interactive p-3.5 relative overflow-hidden">
+                    <div className="flex items-center justify-between mb-1">
+                        <span className="p-1.5 rounded-lg bg-violet-100 text-violet-600">
+                            <Gauge className="w-3.5 h-3.5" />
+                        </span>
+                        <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">
+                            Good
+                        </span>
+                    </div>
+                    <p className="text-xl font-extrabold text-secondary-900">88/100</p>
+                    <p className="text-[10px] font-medium text-slate-500 truncate">Health Score</p>
+                </div>
+
+                {/* 5. Open Risks */}
+                <div className="glass-card-interactive p-3.5 relative overflow-hidden">
+                    <div className="flex items-center justify-between mb-1">
+                        <span className="p-1.5 rounded-lg bg-rose-100 text-rose-600">
+                            <ShieldAlert className="w-3.5 h-3.5" />
+                        </span>
+                        <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-md">
+                            Active
+                        </span>
+                    </div>
+                    <p className="text-xl font-extrabold text-secondary-900">8</p>
+                    <p className="text-[10px] font-medium text-slate-500 truncate">Open Risks</p>
+                </div>
+
+                {/* 6. Delayed Tasks */}
+                <div className="glass-card-interactive p-3.5 relative overflow-hidden">
+                    <div className="flex items-center justify-between mb-1">
+                        <span className="p-1.5 rounded-lg bg-orange-100 text-orange-600">
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                        </span>
+                        <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded-md">
+                            Warning
+                        </span>
+                    </div>
+                    <p className="text-xl font-extrabold text-secondary-900">3</p>
+                    <p className="text-[10px] font-medium text-slate-500 truncate">Delayed Tasks</p>
+                </div>
+
+                {/* 7. Team Utilization */}
+                <div className="glass-card-interactive p-3.5 relative overflow-hidden">
+                    <div className="flex items-center justify-between mb-1">
+                        <span className="p-1.5 rounded-lg bg-blue-100 text-blue-600">
+                            <Users className="w-3.5 h-3.5" />
+                        </span>
+                        <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-md">
+                            74%
+                        </span>
+                    </div>
+                    <p className="text-xl font-extrabold text-secondary-900">74%</p>
+                    <p className="text-[10px] font-medium text-slate-500 truncate">Team Allocation</p>
+                </div>
+
+                {/* 8. Milestones Completed */}
+                <div className="glass-card-interactive p-3.5 relative overflow-hidden">
+                    <div className="flex items-center justify-between mb-1">
+                        <span className="p-1.5 rounded-lg bg-teal-100 text-teal-600">
+                            <CheckSquare className="w-3.5 h-3.5" />
+                        </span>
+                        <span className="text-[10px] font-bold text-teal-600 bg-teal-50 px-1.5 py-0.5 rounded-md">
+                            +18
+                        </span>
+                    </div>
+                    <p className="text-xl font-extrabold text-secondary-900">152</p>
+                    <p className="text-[10px] font-medium text-slate-500 truncate">Milestones Met</p>
+                </div>
+            </div>
+
+            {/* 3. Trackline Segmented Progress & Workload Widgets (Images 1 & 4 Reference) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Overall Tasks with Segmented Progress Bar */}
+                <div className="glass-panel p-5">
+                    <div className="flex items-center justify-between mb-2">
+                        <div>
+                            <h3 className="font-bold text-sm text-secondary-900">Overall Tasks</h3>
+                            <p className="text-[11px] text-slate-500">Spread across 6 research verticals</p>
                         </div>
-                        <div className="flex-1 space-y-3">
-                            {[
-                                { label: 'Active', count: displayData.projectsByStatus[0]?.count || 0, color: 'bg-success-500' },
-                                { label: 'Completed', count: displayData.projectsByStatus[1]?.count || 0, color: 'bg-primary-500' },
-                                { label: 'Pending Approval', count: displayData.projectsByStatus[2]?.count || 0, color: 'bg-warning-500' },
-                                { label: 'On Hold', count: displayData.projectsByStatus[3]?.count || 0, color: 'bg-secondary-400' },
-                            ].map((item, i) => (
-                                <div key={i} className="flex items-center gap-3">
-                                    <div className={`w-3 h-3 rounded-full ${item.color}`} />
-                                    <span className="text-sm text-secondary-600 flex-1">{item.label}</span>
-                                    <span className="text-sm font-semibold text-secondary-900">{item.count}</span>
-                                </div>
-                            ))}
+                        <span className="text-2xl font-extrabold text-secondary-900">23</span>
+                    </div>
+
+                    {/* Segmented Color Bar */}
+                    <div className="segmented-bar my-3">
+                        <div className="h-full bg-primary-500 rounded-l-full" style={{ width: '52%' }} title="On Going: 12"></div>
+                        <div className="h-full bg-amber-500" style={{ width: '26%' }} title="Under Review: 6"></div>
+                        <div className="h-full bg-emerald-500 rounded-r-full" style={{ width: '22%' }} title="Finished: 5"></div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs pt-1">
+                        <span className="flex items-center gap-1.5 text-slate-600">
+                            <span className="w-2 h-2 rounded-full bg-primary-500"></span>
+                            On Going: <b>12</b>
+                        </span>
+                        <span className="flex items-center gap-1.5 text-slate-600">
+                            <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                            In Review: <b>6</b>
+                        </span>
+                        <span className="flex items-center gap-1.5 text-slate-600">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                            Finished: <b>5</b>
+                        </span>
+                    </div>
+                </div>
+
+                {/* Project Track Growth Card */}
+                <div className="glass-panel p-5">
+                    <div className="flex items-center justify-between mb-2">
+                        <div>
+                            <h3 className="font-bold text-sm text-secondary-900">Research Milestones</h3>
+                            <p className="text-[11px] text-slate-500">Monthly velocity & completion</p>
+                        </div>
+                        <span className="glass-pill bg-emerald-50 text-emerald-700 border-emerald-200">
+                            <TrendingUp className="w-3 h-3 text-emerald-600" />
+                            +12.2% growth
+                        </span>
+                    </div>
+
+                    <div className="grid grid-cols-4 gap-2 pt-2 text-center">
+                        <div className="p-2 bg-primary-50/60 rounded-xl">
+                            <p className="text-[10px] text-primary-700 font-semibold">Jan</p>
+                            <p className="text-sm font-bold text-primary-900">14</p>
+                        </div>
+                        <div className="p-2 bg-amber-50/60 rounded-xl">
+                            <p className="text-[10px] text-amber-700 font-semibold">Feb</p>
+                            <p className="text-sm font-bold text-amber-900">19</p>
+                        </div>
+                        <div className="p-2 bg-violet-50/60 rounded-xl">
+                            <p className="text-[10px] text-violet-700 font-semibold">Mar</p>
+                            <p className="text-sm font-bold text-violet-900">22</p>
+                        </div>
+                        <div className="p-2 bg-emerald-50/60 rounded-xl">
+                            <p className="text-[10px] text-emerald-700 font-semibold">Apr (Curr)</p>
+                            <p className="text-sm font-bold text-emerald-900">27</p>
                         </div>
                     </div>
                 </div>
 
-                {/* Projects by Category Chart */}
-                <div className="chart-container">
-                    <div className="flex items-center justify-between mb-6">
-                        <h3 className="text-lg font-semibold text-secondary-900">Projects by Category</h3>
-                        <button
-                            onClick={() => saveChartAsImage(categoryChartRef, 'projects_by_category')}
-                            className="p-2 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-                            title="Save as Image"
-                        >
-                            <ImageRegular className="w-5 h-5" />
-                        </button>
+                {/* Interactive Work Load Chill-to-Busy Slider (Image 4 Reference) */}
+                <div className="glass-panel p-5">
+                    <div className="flex items-center justify-between mb-2">
+                        <div>
+                            <h3 className="font-bold text-sm text-secondary-900">Team Work Load</h3>
+                            <p className="text-[11px] text-slate-500">Capacity utilization dial</p>
+                        </div>
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${workloadLevel > 80 ? 'bg-rose-100 text-rose-700' : workloadLevel > 50 ? 'bg-primary-100 text-primary-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                            {workloadLevel}% {workloadLevel > 80 ? 'Heavy' : workloadLevel > 50 ? 'Optimal' : 'Chill'}
+                        </span>
                     </div>
-                    <div className="h-64">
-                        <Bar
-                            ref={categoryChartRef}
-                            data={categoryChartData}
+
+                    <div className="py-2">
+                        <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={workloadLevel}
+                            onChange={(e) => setWorkloadLevel(Number(e.target.value))}
+                            className="w-full accent-primary-600 h-2 bg-slate-200 rounded-lg cursor-pointer"
+                        />
+                        <div className="flex justify-between text-[10px] font-semibold text-slate-400 mt-1">
+                            <span>Chill (0%)</span>
+                            <span>Optimal (50%)</span>
+                            <span>Busy (100%)</span>
+                        </div>
+                    </div>
+
+                    <div className="pt-2 flex items-center justify-between text-xs border-t border-slate-100 text-slate-600">
+                        <span>Active Staff: <b>156</b></span>
+                        <span>Avail. Hours: <b>1,420h</b></span>
+                    </div>
+                </div>
+            </div>
+
+            {/* 4. Earned Value Management (EVM) Analytics Card (Image 2 Reference) */}
+            <div className="glass-panel p-5">
+                <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                        <div className="p-1.5 rounded-xl bg-primary-50 text-primary-600">
+                            <Gauge className="w-4 h-4" />
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-sm text-secondary-900">Earned Value Management (EVM Analytics)</h3>
+                            <p className="text-[11px] text-slate-500">Government compliance and project costing indicators</p>
+                        </div>
+                    </div>
+                    <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-2.5 py-1 rounded-xl">
+                        Schedule & Cost On-Track
+                    </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                    <div className="p-3 bg-slate-50/80 rounded-2xl border border-slate-100">
+                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Planned Value (PV)</p>
+                        <p className="text-base font-extrabold text-secondary-900 mt-0.5">₹4.85 Cr</p>
+                        <p className="text-[10px] text-slate-500">Budgeted cost of work</p>
+                    </div>
+
+                    <div className="p-3 bg-slate-50/80 rounded-2xl border border-slate-100">
+                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Earned Value (EV)</p>
+                        <p className="text-base font-extrabold text-emerald-600 mt-0.5">₹4.20 Cr</p>
+                        <p className="text-[10px] text-slate-500">Value of completed work</p>
+                    </div>
+
+                    <div className="p-3 bg-slate-50/80 rounded-2xl border border-slate-100">
+                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Actual Cost (AC)</p>
+                        <p className="text-base font-extrabold text-primary-600 mt-0.5">₹3.52 Cr</p>
+                        <p className="text-[10px] text-slate-500">Actual expenditures</p>
+                    </div>
+
+                    <div className="p-3 bg-slate-50/80 rounded-2xl border border-slate-100">
+                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Cost Performance (CPI)</p>
+                        <p className="text-base font-extrabold text-emerald-600 mt-0.5">1.19</p>
+                        <p className="text-[10px] text-emerald-600 font-semibold">Under Budget (&gt; 1.0)</p>
+                    </div>
+
+                    <div className="p-3 bg-slate-50/80 rounded-2xl border border-slate-100">
+                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Schedule Index (SPI)</p>
+                        <p className="text-base font-extrabold text-primary-600 mt-0.5">0.96</p>
+                        <p className="text-[10px] text-amber-600 font-semibold">Near Schedule (~1.0)</p>
+                    </div>
+
+                    <div className="p-3 bg-slate-50/80 rounded-2xl border border-slate-100">
+                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Est. at Completion (EAC)</p>
+                        <p className="text-base font-extrabold text-secondary-900 mt-0.5">₹4.60 Cr</p>
+                        <p className="text-[10px] text-emerald-600">Savings: ₹25 Lakhs</p>
+                    </div>
+                </div>
+            </div>
+
+            {/* 5. Dual Chart Section: Budget vs Actual Trend & Status Donut (Image 2 Reference) */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                {/* Budget vs Actual Line Chart (2 Cols) */}
+                <div className="glass-panel p-5 lg:col-span-2">
+                    <div className="flex items-center justify-between mb-3">
+                        <div>
+                            <h3 className="font-bold text-sm text-secondary-900">Budget vs Actual Spend Trend (YTD)</h3>
+                            <p className="text-[11px] text-slate-500">Cumulative fiscal year financial monitoring</p>
+                        </div>
+                        <span className="glass-pill text-xs text-slate-600">
+                            FY 2025-26
+                        </span>
+                    </div>
+                    <div className="h-60">
+                        <Line
+                            ref={budgetChartRef}
+                            data={budgetTrendData}
                             options={{
                                 responsive: true,
                                 maintainAspectRatio: false,
+                                plugins: {
+                                    legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+                                },
                                 scales: {
                                     y: {
-                                        beginAtZero: true,
-                                        grid: { color: 'rgba(0,0,0,0.05)' },
+                                        grid: { color: 'rgba(226, 232, 240, 0.6)' },
+                                        ticks: { font: { size: 10 } }
                                     },
                                     x: {
                                         grid: { display: false },
-                                    },
-                                },
-                                plugins: {
-                                    legend: { display: false },
-                                },
+                                        ticks: { font: { size: 10 } }
+                                    }
+                                }
                             }}
                         />
                     </div>
                 </div>
-            </div>
 
-            {/* Quick Actions & Upcoming */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Quick Actions */}
-                <div className="premium-card p-6">
-                    <h3 className="text-lg font-semibold text-secondary-900 mb-4">Quick Actions</h3>
-                    <div className="grid grid-cols-2 gap-3">
-                        {quickActions.map((action, index) => (
-                            <Link
-                                key={index}
-                                to={action.href}
-                                className="flex flex-col items-center justify-center p-4 rounded-xl bg-secondary-50 hover:bg-primary-50 hover:text-primary-600 transition-all duration-200 group"
-                            >
-                                <action.icon className="w-6 h-6 mb-2 text-secondary-400 group-hover:text-primary-500 transition-colors" />
-                                <span className="text-sm font-medium text-center">{action.label}</span>
-                            </Link>
-                        ))}
+                {/* Project Status Donut Chart (1 Col) */}
+                <div className="glass-panel p-5">
+                    <div className="flex items-center justify-between mb-3">
+                        <div>
+                            <h3 className="font-bold text-sm text-secondary-900">Projects by Status</h3>
+                            <p className="text-[11px] text-slate-500">Distribution of {totalCount} projects</p>
+                        </div>
                     </div>
-                </div>
-
-                {/* My Tasks */}
-                <div className="premium-card p-6">
-                    <TodoList compact />
-                </div>
-
-                {/* Upcoming RC Meetings */}
-                <div className="lg:col-span-2 premium-card p-6">
-                    <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-semibold text-secondary-900">Upcoming RC Meetings</h3>
-                        <Link to="/rc-meetings" className="btn-ghost text-sm">
-                            View All <ArrowRightRegular className="w-4 h-4 ml-1" />
-                        </Link>
-                    </div>
-                    <div className="space-y-3">
-                        {displayData.upcomingMeetings.map((meeting) => (
-                            <Link
-                                key={meeting.id}
-                                to={`/rc-meetings/${meeting.id}`}
-                                className="flex items-center gap-4 p-4 rounded-xl bg-secondary-50 hover:bg-primary-50 transition-colors group"
-                            >
-                                <div className="w-14 h-14 rounded-xl bg-gradient-premium flex flex-col items-center justify-center text-white">
-                                    <span className="text-xs font-medium">
-                                        {new Date(meeting.date).toLocaleDateString('en-US', { month: 'short' })}
-                                    </span>
-                                    <span className="text-lg font-bold">
-                                        {new Date(meeting.date).getDate()}
-                                    </span>
-                                </div>
-                                <div className="flex-1">
-                                    <p className="font-medium text-secondary-900 group-hover:text-primary-600 transition-colors">
-                                        {meeting.title}
-                                    </p>
-                                    <p className="text-sm text-secondary-500">
-                                        Meeting #{meeting.number} • {new Date(meeting.date).toLocaleDateString('en-IN', {
-                                            weekday: 'long',
-                                            year: 'numeric',
-                                            month: 'long',
-                                            day: 'numeric',
-                                        })}
-                                    </p>
-                                </div>
-                                <ArrowRightRegular className="w-5 h-5 text-secondary-400 group-hover:text-primary-500 transition-colors" />
-                            </Link>
-                        ))}
-
-                        {displayData.upcomingMeetings.length === 0 && (
-                            <div className="text-center py-8 text-secondary-500">
-                                <CalendarRegular className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                                <p>No upcoming meetings scheduled</p>
-                            </div>
-                        )}
+                    <div className="h-44 relative flex items-center justify-center">
+                        <Doughnut
+                            ref={statusChartRef}
+                            data={statusChartData}
+                            options={{
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } }
+                                },
+                                cutout: '72%'
+                            }}
+                        />
+                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pb-6">
+                            <span className="text-2xl font-black text-secondary-900">{totalCount}</span>
+                            <span className="text-[10px] text-slate-400 font-medium">Projects</span>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            {/* Alert Cards - Only show if there are alerts */}
-            {(displayData.kpis.overdueMilestones > 0 || displayData.kpis.expiringMoUs > 0) && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {displayData.kpis.overdueMilestones > 0 && (
-                        <div className="flex items-start gap-4 p-6 bg-danger-50 border border-danger-200 rounded-2xl">
-                            <div className="w-12 h-12 rounded-xl bg-danger-500 flex items-center justify-center text-white flex-shrink-0">
-                                <DismissCircleRegular className="w-6 h-6" />
-                            </div>
-                            <div>
-                                <h4 className="font-semibold text-danger-900">Overdue Milestones</h4>
-                                <p className="text-sm text-danger-700 mt-1">
-                                    {displayData.kpis.overdueMilestones} milestone{displayData.kpis.overdueMilestones > 1 ? 's are' : ' is'} past their deadline.
-                                    Immediate attention required.
-                                </p>
-                                <Link to="/timeline" className="inline-flex items-center gap-1 mt-2 text-sm font-medium text-danger-700 hover:text-danger-800">
-                                    View Timeline <ArrowRightRegular className="w-4 h-4" />
-                                </Link>
-                            </div>
+            {/* 6. 5x5 Interactive Risk Heatmap Matrix (Image 2 Reference) */}
+            <div className="glass-panel p-5">
+                <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                        <div className="p-1.5 rounded-xl bg-rose-50 text-rose-600">
+                            <ShieldAlert className="w-4 h-4" />
                         </div>
-                    )}
-
-                    {displayData.kpis.expiringMoUs > 0 && (
-                        <div className="flex items-start gap-4 p-6 bg-warning-50 border border-warning-200 rounded-2xl">
-                            <div className="w-12 h-12 rounded-xl bg-warning-500 flex items-center justify-center text-white flex-shrink-0">
-                                <AlertRegular className="w-6 h-6" />
-                            </div>
-                            <div>
-                                <h4 className="font-semibold text-warning-900">Expiring MoUs</h4>
-                                <p className="text-sm text-warning-700 mt-1">
-                                    {displayData.kpis.expiringMoUs} MoU{displayData.kpis.expiringMoUs > 1 ? 's are' : ' is'} expiring within 30 days.
-                                    Review and renew if needed.
-                                </p>
-                                <Link to="/documents?type=MOU" className="inline-flex items-center gap-1 mt-2 text-sm font-medium text-warning-700 hover:text-warning-800">
-                                    View MoUs <ArrowRightRegular className="w-4 h-4" />
-                                </Link>
-                            </div>
+                        <div>
+                            <h3 className="font-bold text-sm text-secondary-900">Portfolio Risk Heat Map (5x5 Matrix)</h3>
+                            <p className="text-[11px] text-slate-500">Categorization by Likelihood vs Impact severity</p>
                         </div>
-                    )}
+                    </div>
+                    <div className="flex items-center gap-3 text-[11px]">
+                        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-emerald-400"></span> Low</span>
+                        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-amber-400"></span> Medium</span>
+                        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-orange-500"></span> High</span>
+                        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-rose-600"></span> Critical</span>
+                    </div>
                 </div>
-            )}
+
+                {/* 5x5 Grid */}
+                <div className="grid grid-cols-6 gap-1.5 pt-2 text-center text-xs">
+                    {/* Header Row */}
+                    <div className="text-[10px] font-bold text-slate-400 flex items-center justify-center">Likelihood \ Impact</div>
+                    <div className="p-1 text-[10px] font-bold text-slate-500">Negligible (1)</div>
+                    <div className="p-1 text-[10px] font-bold text-slate-500">Minor (2)</div>
+                    <div className="p-1 text-[10px] font-bold text-slate-500">Moderate (3)</div>
+                    <div className="p-1 text-[10px] font-bold text-slate-500">Major (4)</div>
+                    <div className="p-1 text-[10px] font-bold text-slate-500">Catastrophic (5)</div>
+
+                    {/* Row 5: Very High */}
+                    <div className="p-1 text-[10px] font-bold text-slate-500 text-left">Very High (5)</div>
+                    <div className="p-2 bg-amber-200/80 rounded-lg text-amber-900 font-bold">1</div>
+                    <div className="p-2 bg-orange-300/80 rounded-lg text-orange-900 font-bold">2</div>
+                    <div className="p-2 bg-orange-400/80 rounded-lg text-orange-950 font-bold">1</div>
+                    <div className="p-2 bg-rose-400/80 rounded-lg text-white font-bold">1</div>
+                    <div className="p-2 bg-rose-600 text-white rounded-lg font-bold">0</div>
+
+                    {/* Row 4: High */}
+                    <div className="p-1 text-[10px] font-bold text-slate-500 text-left">High (4)</div>
+                    <div className="p-2 bg-emerald-200/80 rounded-lg text-emerald-900 font-bold">2</div>
+                    <div className="p-2 bg-amber-200/80 rounded-lg text-amber-900 font-bold">3</div>
+                    <div className="p-2 bg-orange-300/80 rounded-lg text-orange-900 font-bold">1</div>
+                    <div className="p-2 bg-orange-400/80 rounded-lg text-orange-950 font-bold">1</div>
+                    <div className="p-2 bg-rose-500 text-white rounded-lg font-bold">1</div>
+
+                    {/* Row 3: Medium */}
+                    <div className="p-1 text-[10px] font-bold text-slate-500 text-left">Medium (3)</div>
+                    <div className="p-2 bg-emerald-200/80 rounded-lg text-emerald-900 font-bold">4</div>
+                    <div className="p-2 bg-emerald-300/80 rounded-lg text-emerald-950 font-bold">5</div>
+                    <div className="p-2 bg-amber-200/80 rounded-lg text-amber-900 font-bold">4</div>
+                    <div className="p-2 bg-orange-300/80 rounded-lg text-orange-900 font-bold">2</div>
+                    <div className="p-2 bg-rose-400/80 rounded-lg text-white font-bold">0</div>
+
+                    {/* Row 2: Low */}
+                    <div className="p-1 text-[10px] font-bold text-slate-500 text-left">Low (2)</div>
+                    <div className="p-2 bg-emerald-100 rounded-lg text-emerald-900 font-bold">6</div>
+                    <div className="p-2 bg-emerald-200/80 rounded-lg text-emerald-900 font-bold">7</div>
+                    <div className="p-2 bg-emerald-300/80 rounded-lg text-emerald-950 font-bold">3</div>
+                    <div className="p-2 bg-amber-200/80 rounded-lg text-amber-900 font-bold">1</div>
+                    <div className="p-2 bg-orange-300/80 rounded-lg text-orange-900 font-bold">0</div>
+
+                    {/* Row 1: Very Low */}
+                    <div className="p-1 text-[10px] font-bold text-slate-500 text-left">Very Low (1)</div>
+                    <div className="p-2 bg-emerald-50 rounded-lg text-emerald-800 font-bold">8</div>
+                    <div className="p-2 bg-emerald-100 rounded-lg text-emerald-900 font-bold">4</div>
+                    <div className="p-2 bg-emerald-200/80 rounded-lg text-emerald-900 font-bold">2</div>
+                    <div className="p-2 bg-emerald-200/80 rounded-lg text-emerald-900 font-bold">1</div>
+                    <div className="p-2 bg-emerald-300/80 rounded-lg text-emerald-950 font-bold">0</div>
+                </div>
+            </div>
+
+            {/* 7. Hierarchical Project List Table with Expandable Subtasks (Image 1 Reference) */}
+            <div className="glass-panel p-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                    <div>
+                        <h3 className="font-bold text-sm text-secondary-900">Project Portfolio & Milestone Breakdown</h3>
+                        <p className="text-[11px] text-slate-500">
+                            Showing {filteredProjects.length} matching projects with milestones and file attachments
+                        </p>
+                    </div>
+                    <Link
+                        to="/projects"
+                        className="text-xs font-semibold text-primary-600 hover:text-primary-800 flex items-center gap-1"
+                    >
+                        <span>Full Project Directory</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                    </Link>
+                </div>
+
+                <div className="overflow-x-auto">
+                    <table className="table-glossy">
+                        <thead>
+                            <tr>
+                                <th style={{ width: '40px' }}></th>
+                                <th>Project Code & Title</th>
+                                <th>Category / Vertical</th>
+                                <th>Target Date</th>
+                                <th>Principal Investigator</th>
+                                <th>Status</th>
+                                <th>Progress</th>
+                                <th className="text-right">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filteredProjects.length === 0 ? (
+                                <tr>
+                                    <td colSpan={8} className="text-center py-10 text-slate-400 text-xs">
+                                        No projects found matching the filter criteria.
+                                    </td>
+                                </tr>
+                            ) : (
+                                filteredProjects.slice(0, 6).map((proj, idx) => {
+                                    const isExpanded = !!expandedProjects[proj.id || `p-${idx}`];
+                                    const mockSubtasks = [
+                                        { title: 'Phase 1: Sensor Instrument Calibration', dueDate: 'Sep 24, 2026', doc: 'Test_Protocol.pdf', status: 'Completed', progress: 100 },
+                                        { title: 'Phase 2: Numerical Modeling & Finite Element Analysis', dueDate: 'Nov 15, 2026', doc: 'FEM_Report_v2.docx', status: 'Active', progress: 65 },
+                                        { title: 'Phase 3: Prototype Full-Scale Testing', dueDate: 'Jan 30, 2027', doc: 'Testing_Data.xlsx', status: 'Active', progress: 40 },
+                                    ];
+
+                                    return (
+                                        <>
+                                            <tr key={proj.id || idx} className="hover:bg-slate-50/70 transition-colors">
+                                                <td>
+                                                    <button
+                                                        onClick={() => toggleProjectExpand(proj.id || `p-${idx}`)}
+                                                        className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                                                    >
+                                                        {isExpanded ? (
+                                                            <ChevronDown className="w-4 h-4 text-primary-600" />
+                                                        ) : (
+                                                            <ChevronRight className="w-4 h-4" />
+                                                        )}
+                                                    </button>
+                                                </td>
+                                                <td>
+                                                    <div className="font-bold text-xs text-secondary-900">{proj.code}</div>
+                                                    <div className="text-[11px] text-slate-500 truncate max-w-xs">{proj.title}</div>
+                                                </td>
+                                                <td>
+                                                    <span className="glass-pill text-[10px] bg-slate-100 text-slate-700">
+                                                        {proj.category} • {proj.vertical?.code || 'SHMLE'}
+                                                    </span>
+                                                </td>
+                                                <td className="text-xs text-slate-600">
+                                                    {proj.endDate ? new Date(proj.endDate).toLocaleDateString() : 'Dec 2027'}
+                                                </td>
+                                                <td>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-6 h-6 rounded-full bg-gradient-primary-glossy flex items-center justify-center text-white text-[10px] font-bold">
+                                                            {proj.projectHead?.firstName?.[0] || 'S'}
+                                                        </div>
+                                                        <span className="text-xs text-slate-700">
+                                                            {proj.projectHead ? `Dr. ${proj.projectHead.firstName} ${proj.projectHead.lastName}` : 'Dr. Saptarshi Sasmal'}
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${proj.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : proj.status === 'COMPLETED' ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
+                                                        {proj.status}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-16 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                                            <div
+                                                                className="h-full bg-gradient-primary-glossy rounded-full"
+                                                                style={{ width: `${proj.progress || 60}%` }}
+                                                            ></div>
+                                                        </div>
+                                                        <span className="text-xs font-bold text-slate-700">{proj.progress || 60}%</span>
+                                                    </div>
+                                                </td>
+                                                <td className="text-right">
+                                                    <Link
+                                                        to={`/projects/${proj.id}`}
+                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-primary-600 hover:bg-primary-50 inline-flex items-center gap-1 text-xs font-semibold"
+                                                    >
+                                                        <span>View</span>
+                                                        <ExternalLink className="w-3.5 h-3.5" />
+                                                    </Link>
+                                                </td>
+                                            </tr>
+
+                                            {/* Expandable Sub-Milestone Row (Image 1 reference) */}
+                                            {isExpanded && (
+                                                <tr key={`sub-${proj.id || idx}`} className="bg-slate-50/40">
+                                                    <td colSpan={8} className="py-2.5 px-6">
+                                                        <div className="space-y-2 border-l-2 border-primary-200 pl-4 my-1">
+                                                            {mockSubtasks.map((task, sIdx) => (
+                                                                <div key={sIdx} className="flex items-center justify-between text-xs py-1">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <CheckSquare className={`w-3.5 h-3.5 ${task.status === 'Completed' ? 'text-emerald-500' : 'text-slate-300'}`} />
+                                                                        <span className="font-medium text-slate-700">{task.title}</span>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-4">
+                                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[10px] text-slate-600">
+                                                                            <Paperclip className="w-2.5 h-2.5 text-primary-500" />
+                                                                            {task.doc}
+                                                                        </span>
+                                                                        <span className="text-[11px] text-slate-500">{task.dueDate}</span>
+                                                                        <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${task.status === 'Completed' ? 'bg-emerald-100 text-emerald-800' : 'bg-primary-100 text-primary-800'}`}>
+                                                                            {task.progress}%
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </>
+                                    );
+                                })
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     );
 }

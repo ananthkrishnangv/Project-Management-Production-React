@@ -8,22 +8,20 @@ export default {
     theme: {
         extend: {
             colors: {
-                // Premium CSIR-SERC Color Palette
-                // Primary - Deep Government Blue
+                // CSIR-SERC Brand Palette
                 primary: {
-                    50: '#e6f0fa',
-                    100: '#cce1f5',
-                    200: '#99c3eb',
-                    300: '#66a5e0',
-                    400: '#3387d6',
-                    500: '#0369cc',  // Main brand color
-                    600: '#0254a3',
-                    700: '#023f7a',
-                    800: '#012a52',
-                    900: '#001529',
-                    950: '#000a14',
+                    50: '#eef6ff',
+                    100: '#d9eaff',
+                    200: '#bcdbff',
+                    300: '#8ec4ff',
+                    400: '#58a2ff',
+                    500: '#0078d4', // Fluent Blue
+                    600: '#005a9e',
+                    700: '#004578',
+                    800: '#002b49', // Deep CSIR Navy
+                    900: '#001a2e',
+                    950: '#000d17',
                 },
-                // Secondary - Professional Slate
                 secondary: {
                     50: '#f8fafc',
                     100: '#f1f5f9',
@@ -37,7 +35,6 @@ export default {
                     900: '#0f172a',
                     950: '#020617',
                 },
-                // Accent - Royal Gold (for highlights)
                 accent: {
                     50: '#fffbeb',
                     100: '#fef3c7',
@@ -50,7 +47,6 @@ export default {
                     800: '#92400e',
                     900: '#78350f',
                 },
-                // Success - Emerald
                 success: {
                     50: '#ecfdf5',
                     100: '#d1fae5',
@@ -63,20 +59,18 @@ export default {
                     800: '#065f46',
                     900: '#064e3b',
                 },
-                // Warning - Amber
                 warning: {
-                    50: '#fffbeb',
-                    100: '#fef3c7',
-                    200: '#fde68a',
-                    300: '#fcd34d',
-                    400: '#fbbf24',
-                    500: '#f59e0b',
-                    600: '#d97706',
-                    700: '#b45309',
-                    800: '#92400e',
-                    900: '#78350f',
+                    50: '#fff7ed',
+                    100: '#ffedd5',
+                    200: '#fed7aa',
+                    300: '#fdba74',
+                    400: '#fb923c',
+                    500: '#f97316',
+                    600: '#ea580c',
+                    700: '#c2410c',
+                    800: '#9a3412',
+                    900: '#7c2d12',
                 },
-                // Danger - Rose
                 danger: {
                     50: '#fff1f2',
                     100: '#ffe4e6',
@@ -89,50 +83,59 @@ export default {
                     800: '#9f1239',
                     900: '#881337',
                 },
-                // Surface colors for cards and backgrounds
+                violet: {
+                    50: '#f5f3ff',
+                    100: '#ede9fe',
+                    200: '#ddd6fe',
+                    300: '#c4b5fd',
+                    400: '#a78bfa',
+                    500: '#8b5cf6',
+                    600: '#7c3aed',
+                    700: '#6d28d9',
+                    800: '#5b21b6',
+                    900: '#4c1d95',
+                },
                 surface: {
                     light: '#ffffff',
                     muted: '#f8fafc',
                     subtle: '#f1f5f9',
                     dim: '#e2e8f0',
                 },
-                // Government India specific colors
-                india: {
-                    saffron: '#FF9933',
-                    white: '#FFFFFF',
-                    green: '#138808',
-                    blue: '#000080',
-                },
             },
             fontFamily: {
-                sans: ['Inter', 'Segoe UI', 'Roboto', 'system-ui', 'sans-serif'],
-                display: ['Outfit', 'Inter', 'sans-serif'],
+                sans: ['Inter', 'Segoe UI', 'Roboto', 'system-ui', '-apple-system', 'sans-serif'],
+                display: ['Outfit', 'Inter', 'Segoe UI', 'sans-serif'],
                 mono: ['JetBrains Mono', 'Consolas', 'monospace'],
             },
             boxShadow: {
-                'premium': '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.03)',
-                'premium-lg': '0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.03)',
-                'premium-xl': '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.04)',
-                'glow': '0 0 20px rgba(3, 105, 204, 0.15)',
-                'glow-accent': '0 0 20px rgba(245, 158, 11, 0.2)',
-                'inner-premium': 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)',
+                'glossy': '0 10px 30px -5px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(255, 255, 255, 0.8) inset, 0 1px 3px 0 rgba(0, 0, 0, 0.02)',
+                'glossy-lg': '0 20px 40px -10px rgba(0, 0, 0, 0.07), 0 0 0 1px rgba(255, 255, 255, 0.9) inset, 0 2px 4px 0 rgba(0, 0, 0, 0.03)',
+                'glossy-xl': '0 25px 50px -12px rgba(0, 0, 0, 0.12), 0 0 0 1.5px rgba(255, 255, 255, 0.95) inset',
+                'glow-primary': '0 0 25px rgba(0, 120, 212, 0.22)',
+                'glow-emerald': '0 0 25px rgba(16, 185, 129, 0.22)',
+                'glow-amber': '0 0 25px rgba(245, 158, 11, 0.22)',
+                'glow-violet': '0 0 25px rgba(139, 92, 246, 0.22)',
             },
             backgroundImage: {
-                'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
-                'gradient-mesh': 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                'gradient-premium': 'linear-gradient(135deg, #0369cc 0%, #023f7a 100%)',
-                'gradient-gold': 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                'gradient-dark': 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
-                'glass': 'linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%)',
+                'gradient-glossy': 'linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0.72) 100%)',
+                'gradient-glossy-card': 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.8) 100%)',
+                'gradient-primary-glossy': 'linear-gradient(135deg, #0078d4 0%, #004578 100%)',
+                'gradient-emerald-glossy': 'linear-gradient(135deg, #10b981 0%, #047857 100%)',
+                'gradient-amber-glossy': 'linear-gradient(135deg, #f59e0b 0%, #b45309 100%)',
+                'gradient-violet-glossy': 'linear-gradient(135deg, #8b5cf6 0%, #5b21b6 100%)',
+                'gradient-mesh-soft': 'radial-gradient(at 0% 0%, rgba(0, 120, 212, 0.08) 0px, transparent 50%), radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.08) 0px, transparent 50%)',
+            },
+            borderRadius: {
+                '2xl': '1rem',
+                '3xl': '1.5rem',
+                '4xl': '2rem',
             },
             animation: {
-                'fade-in': 'fadeIn 0.3s ease-out',
-                'slide-up': 'slideUp 0.4s ease-out',
-                'slide-down': 'slideDown 0.4s ease-out',
-                'scale-in': 'scaleIn 0.2s ease-out',
+                'fade-in': 'fadeIn 0.25s ease-out',
+                'slide-up': 'slideUp 0.35s ease-out',
+                'scale-in': 'scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
                 'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-                'shimmer': 'shimmer 2s linear infinite',
-                'float': 'float 6s ease-in-out infinite',
+                'shimmer': 'shimmer 2.5s linear infinite',
             },
             keyframes: {
                 fadeIn: {
@@ -140,28 +143,17 @@ export default {
                     '100%': { opacity: '1' },
                 },
                 slideUp: {
-                    '0%': { opacity: '0', transform: 'translateY(20px)' },
-                    '100%': { opacity: '1', transform: 'translateY(0)' },
-                },
-                slideDown: {
-                    '0%': { opacity: '0', transform: 'translateY(-20px)' },
+                    '0%': { opacity: '0', transform: 'translateY(16px)' },
                     '100%': { opacity: '1', transform: 'translateY(0)' },
                 },
                 scaleIn: {
-                    '0%': { opacity: '0', transform: 'scale(0.95)' },
+                    '0%': { opacity: '0', transform: 'scale(0.96)' },
                     '100%': { opacity: '1', transform: 'scale(1)' },
                 },
                 shimmer: {
                     '0%': { backgroundPosition: '-200% 0' },
                     '100%': { backgroundPosition: '200% 0' },
                 },
-                float: {
-                    '0%, 100%': { transform: 'translateY(0)' },
-                    '50%': { transform: 'translateY(-10px)' },
-                },
-            },
-            backdropBlur: {
-                xs: '2px',
             },
         },
     },

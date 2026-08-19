@@ -8,6 +8,8 @@ export interface User {
     lastName: string;
     role: 'ADMIN' | 'DIRECTOR' | 'SUPERVISOR' | 'PROJECT_HEAD' | 'EMPLOYEE' | 'EXTERNAL_OWNER';
     designation?: string;
+    department?: string;
+    phone?: string;
     profileImage?: string;
     twoFactorEnabled?: boolean;
 }

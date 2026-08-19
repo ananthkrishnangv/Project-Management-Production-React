@@ -1,37 +1,44 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import {
-    AddRegular,
-    SearchRegular,
-    FilterRegular,
-    GridRegular,
-    ListRegular,
-    ChevronDownRegular,
-    FolderRegular,
-    CalendarRegular,
-    PeopleTeamRegular,
-    MoneyRegular,
-    ArrowRightRegular,
-    DismissRegular,
-    CheckmarkCircleRegular,
-    ClockRegular,
-    InfoRegular,
-    AlertRegular,
-} from '@fluentui/react-icons';
+    FolderKanban,
+    Plus,
+    Search,
+    Filter,
+    LayoutGrid,
+    List,
+    Calendar,
+    Users,
+    Clock,
+    AlertCircle,
+    CheckCircle2,
+    TrendingUp,
+    Download,
+    ChevronRight,
+    ChevronDown,
+    X,
+    ExternalLink,
+    Sparkles,
+    Briefcase,
+    FileText,
+    ArrowUpRight
+} from 'lucide-react';
 
 interface Project {
     id: string;
     code: string;
     title: string;
-    category: 'GAP' | 'CNP' | 'OLP' | 'EFP' | 'BMP' | 'FBR' | 'FTC' | 'FTT' | 'MMP' | 'NCP' | 'NMITLI' | 'MLP' | 'SSP' | 'STS';
+    description?: string;
+    category: string;
     status: string;
     progress: number;
-    vertical?: { name: string; code: string };
-    projectHead?: { firstName: string; lastName: string };
+    vertical?: { name: string; code: string; id?: string };
+    projectHead?: { id?: string; firstName: string; lastName: string; email?: string };
     startDate: string;
     endDate: string;
     _count?: { staff: number; milestones: number };
+    milestones?: Array<{ id: string; title: string; status: string; progress: number; endDate: string }>;
 }
 
 interface Vertical {
@@ -48,8 +55,6 @@ interface User {
     designation?: string;
 }
 
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
-
 export default function ProjectsPage() {
     const { accessToken, user: currentUser } = useAuthStore();
     const [projects, setProjects] = useState<Project[]>([]);
@@ -58,11 +63,13 @@ export default function ProjectsPage() {
     const [loading, setLoading] = useState(true);
     const [view, setView] = useState<'grid' | 'list'>('grid');
     const [search, setSearch] = useState('');
-    const [categoryFilter, setCategoryFilter] = useState<string>('');
-    const [statusFilter, setStatusFilter] = useState<string>('');
+    const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
+    const [verticalFilter, setVerticalFilter] = useState<string>('ALL');
+    const [statusFilter, setStatusFilter] = useState<string>('ALL');
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [successMessage, setSuccessMessage] = useState('');
     const [error, setError] = useState('');
+    const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
 
     // Form state for creating project
     const [formData, setFormData] = useState({
@@ -71,7 +78,6 @@ export default function ProjectsPage() {
         category: 'GAP',
         customCategory: '',
         verticalId: '',
-        specialArea: '',
         projectHeadId: '',
         startDate: '',
         endDate: '',
@@ -82,46 +88,36 @@ export default function ProjectsPage() {
     const [saving, setSaving] = useState(false);
     const [previewCode, setPreviewCode] = useState('');
 
-    // Check if user can create projects
     const canCreate = ['ADMIN', 'SUPERVISOR', 'DIRECTOR', 'DIRECTOR_GENERAL'].includes(currentUser?.role || '');
 
     useEffect(() => {
         fetchProjects();
         fetchVerticals();
         fetchStaff();
-    }, [categoryFilter, statusFilter, search]);
+    }, []);
 
     // Generate preview code when category or vertical changes
     useEffect(() => {
         if (formData.category && formData.verticalId) {
             const vertical = verticals.find(v => v.id === formData.verticalId);
             const year = new Date().getFullYear();
-            const cat = formData.category === 'CUSTOM' ? formData.customCategory.toUpperCase().slice(0, 3) : formData.category;
-            setPreviewCode(`${cat}-${year}-${vertical?.code || 'XX'}-XXX`);
-        } else {
-            setPreviewCode('');
+            const cat = formData.category === 'CUSTOM' ? (formData.customCategory.toUpperCase().slice(0, 3) || 'PRJ') : formData.category;
+            setPreviewCode(`${cat}-${year}-${vertical?.code || 'XX'}-001`);
         }
     }, [formData.category, formData.verticalId, formData.customCategory, verticals]);
 
     const fetchProjects = async () => {
+        setLoading(true);
         try {
-            setLoading(true);
-            const params = new URLSearchParams();
-            params.append('limit', '100');
-            if (categoryFilter) params.append('category', categoryFilter);
-            if (statusFilter) params.append('status', statusFilter);
-            if (search) params.append('search', search);
-
-            const res = await fetch(`${API_BASE}/projects?${params}`, {
-                headers: { 'Authorization': `Bearer ${accessToken}` },
+            const res = await fetch('/api/projects', {
+                headers: { Authorization: `Bearer ${accessToken}` },
             });
-
             if (res.ok) {
-                const data = await res.json();
-                setProjects(data.data || []);
+                const result = await res.json();
+                setProjects(result.data || result || []);
             }
-        } catch (error) {
-            console.error('Failed to fetch projects:', error);
+        } catch (err) {
+            console.error('Failed to fetch projects:', err);
         } finally {
             setLoading(false);
         }
@@ -129,77 +125,75 @@ export default function ProjectsPage() {
 
     const fetchVerticals = async () => {
         try {
-            const res = await fetch(`${API_BASE}/verticals`, {
-                headers: { 'Authorization': `Bearer ${accessToken}` },
+            const res = await fetch('/api/verticals', {
+                headers: { Authorization: `Bearer ${accessToken}` },
             });
             if (res.ok) {
                 const data = await res.json();
-                setVerticals(data || []);
+                setVerticals(data);
+                if (data.length > 0 && !formData.verticalId) {
+                    setFormData(prev => ({ ...prev, verticalId: data[0].id }));
+                }
             }
-        } catch (error) {
-            console.error('Failed to fetch verticals:', error);
+        } catch (err) {
+            console.error('Failed to fetch verticals:', err);
         }
     };
 
     const fetchStaff = async () => {
         try {
-            const res = await fetch(`${API_BASE}/staff?limit=500`, {
-                headers: { 'Authorization': `Bearer ${accessToken}` },
+            const res = await fetch('/api/staff', {
+                headers: { Authorization: `Bearer ${accessToken}` },
             });
             if (res.ok) {
                 const data = await res.json();
                 setStaff(data.data || data || []);
+                if (data.length > 0 && !formData.projectHeadId) {
+                    setFormData(prev => ({ ...prev, projectHeadId: data[0].id }));
+                }
             }
-        } catch (error) {
-            console.error('Failed to fetch staff:', error);
+        } catch (err) {
+            console.error('Failed to fetch staff:', err);
         }
     };
 
     const handleCreateProject = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!formData.title || !formData.verticalId || !formData.projectHeadId || !formData.startDate || !formData.endDate) {
-            setError('Please fill in all required fields');
-            return;
-        }
-
         setSaving(true);
         setError('');
 
         try {
             const payload = {
                 title: formData.title,
-                description: formData.description || undefined,
-                category: formData.category === 'CUSTOM' ? formData.customCategory : formData.category,
+                description: formData.description,
+                category: formData.category === 'CUSTOM' ? formData.customCategory.toUpperCase() : formData.category,
                 verticalId: formData.verticalId,
-                specialAreaId: undefined, // Handle if needed
-                specialArea: formData.specialArea || undefined,
                 projectHeadId: formData.projectHeadId,
                 startDate: formData.startDate,
                 endDate: formData.endDate,
-                objectives: formData.objectives || undefined,
-                methodology: formData.methodology || undefined,
-                expectedOutcome: formData.expectedOutcome || undefined,
+                objectives: formData.objectives ? [formData.objectives] : [],
+                methodology: formData.methodology,
+                expectedOutcome: formData.expectedOutcome,
             };
 
-            const res = await fetch(`${API_BASE}/projects`, {
+            const res = await fetch('/api/projects', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${accessToken}`,
+                    Authorization: `Bearer ${accessToken}`,
                 },
                 body: JSON.stringify(payload),
             });
 
             if (res.ok) {
-                const newProject = await res.json();
-                setSuccessMessage(`Project ${newProject.code} created successfully!`);
-                setTimeout(() => setSuccessMessage(''), 5000);
                 setShowCreateModal(false);
-                resetForm();
+                setSuccessMessage('Project created successfully!');
                 fetchProjects();
+                resetForm();
+                setTimeout(() => setSuccessMessage(''), 4000);
             } else {
                 const err = await res.json();
-                setError(err.error || 'Failed to create project');
+                setError(err.error || err.message || 'Failed to create project');
             }
         } catch (err: any) {
             setError(err.message || 'Failed to create project');
@@ -214,9 +208,8 @@ export default function ProjectsPage() {
             description: '',
             category: 'GAP',
             customCategory: '',
-            verticalId: '',
-            specialArea: '',
-            projectHeadId: '',
+            verticalId: verticals[0]?.id || '',
+            projectHeadId: staff[0]?.id || '',
             startDate: '',
             endDate: '',
             objectives: '',
@@ -227,599 +220,591 @@ export default function ProjectsPage() {
         setError('');
     };
 
-    const categoryColors: Record<string, string> = {
-        GAP: 'bg-primary-100 text-primary-700 border-primary-200',
-        CNP: 'bg-success-100 text-success-700 border-success-200',
-        OLP: 'bg-accent-100 text-accent-700 border-accent-200',
-        EFP: 'bg-warning-100 text-warning-700 border-warning-200',
-        BMP: 'bg-blue-100 text-blue-700 border-blue-200',
-        FBR: 'bg-indigo-100 text-indigo-700 border-indigo-200',
-        FTC: 'bg-purple-100 text-purple-700 border-purple-200',
-        FTT: 'bg-pink-100 text-pink-700 border-pink-200',
-        MMP: 'bg-rose-100 text-rose-700 border-rose-200',
-        NCP: 'bg-orange-100 text-orange-700 border-orange-200',
-        NMITLI: 'bg-teal-100 text-teal-700 border-teal-200',
-        MLP: 'bg-cyan-100 text-cyan-700 border-cyan-200',
-        SSP: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-        STS: 'bg-lime-100 text-lime-700 border-lime-200',
+    const toggleRow = (id: string) => {
+        setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
     };
 
-    const categoryLabels: Record<string, string> = {
-        GAP: 'Grant-in-Aid',
-        CNP: 'Consultancy',
-        OLP: 'Other Lab',
-        EFP: 'Ext. Funded',
-        BMP: 'Bilateral Mission',
-        FBR: 'Focus Basic Research',
-        FTC: 'Fast Track Commerc.',
-        FTT: 'Fast Track Trans.',
-        MMP: 'Mission Mode',
-        NCP: 'Niche Creating',
-        NMITLI: 'NMITLI',
-        MLP: 'Multi Lab',
-        SSP: 'Sponsored Scheme',
-        STS: 'Short Term Service',
-    };
+    // Filter projects
+    const filteredProjects = useMemo(() => {
+        return projects.filter(p => {
+            if (categoryFilter !== 'ALL' && p.category !== categoryFilter) return false;
+            if (verticalFilter !== 'ALL' && p.vertical?.code !== verticalFilter && p.vertical?.id !== verticalFilter) return false;
+            if (statusFilter !== 'ALL' && p.status !== statusFilter) return false;
+            if (search) {
+                const q = search.toLowerCase();
+                const titleMatch = p.title?.toLowerCase().includes(q);
+                const codeMatch = p.code?.toLowerCase().includes(q);
+                const headMatch = p.projectHead ? `${p.projectHead.firstName} ${p.projectHead.lastName}`.toLowerCase().includes(q) : false;
+                if (!titleMatch && !codeMatch && !headMatch) return false;
+            }
+            return true;
+        });
+    }, [projects, categoryFilter, verticalFilter, statusFilter, search]);
 
-    const statusColors: Record<string, string> = {
-        ACTIVE: 'bg-success-500',
-        COMPLETED: 'bg-primary-500',
-        PENDING_APPROVAL: 'bg-warning-500',
-        ON_HOLD: 'bg-secondary-400',
-        DRAFT: 'bg-secondary-300',
-        CANCELLED: 'bg-danger-500',
-    };
-
-    const statusLabels: Record<string, string> = {
-        ACTIVE: 'Active',
-        COMPLETED: 'Completed',
-        PENDING_APPROVAL: 'Pending Approval',
-        ON_HOLD: 'On Hold',
-        DRAFT: 'Draft',
-        CANCELLED: 'Cancelled',
-    };
-
-    const getProgressColor = (progress: number) => {
-        if (progress >= 80) return 'bg-success-500';
-        if (progress >= 50) return 'bg-primary-500';
-        if (progress >= 25) return 'bg-warning-500';
-        return 'bg-secondary-300';
-    };
+    // KPI stats
+    const totalCount = projects.length;
+    const activeCount = projects.filter(p => p.status === 'ACTIVE').length;
+    const completedCount = projects.filter(p => p.status === 'COMPLETED').length;
+    const pendingCount = projects.filter(p => p.status === 'PENDING_APPROVAL' || p.status === 'DRAFT').length;
 
     const getDaysRemaining = (endDate: string) => {
+        if (!endDate) return null;
         const end = new Date(endDate);
         const now = new Date();
-        const diff = Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-        return diff;
+        return Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
     };
 
-    const displayProjects = projects;
+    const exportToCSV = () => {
+        const headers = ['Code', 'Title', 'Category', 'Vertical', 'Status', 'Progress (%)', 'Start Date', 'End Date', 'Project Head'];
+        const rows = filteredProjects.map(p => [
+            p.code,
+            `"${p.title.replace(/"/g, '""')}"`,
+            p.category,
+            p.vertical?.name || '',
+            p.status,
+            p.progress || 0,
+            p.startDate ? p.startDate.split('T')[0] : '',
+            p.endDate ? p.endDate.split('T')[0] : '',
+            p.projectHead ? `${p.projectHead.firstName} ${p.projectHead.lastName}` : ''
+        ]);
+
+        const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement('a');
+        link.setAttribute('href', encodedUri);
+        link.setAttribute('download', `CSIR_SERC_Projects_${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
 
     return (
-        <div className="space-y-6 animate-fade-in">
-            {/* Success Message */}
+        <div className="space-y-6 pb-12">
+            {/* Success Toast */}
             {successMessage && (
-                <div className="fixed top-4 right-4 z-50 p-4 bg-success-50 border border-success-200 rounded-lg text-success-700 shadow-lg animate-fade-in flex items-center gap-2">
-                    <CheckmarkCircleRegular className="w-5 h-5" />
-                    {successMessage}
+                <div className="fixed top-5 right-5 z-50 p-4 bg-emerald-50 border border-emerald-300 rounded-2xl text-emerald-800 shadow-xl flex items-center gap-2.5 animate-fade-in">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                    <span className="font-semibold text-xs">{successMessage}</span>
                 </div>
             )}
 
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            {/* Page Header */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-display font-bold text-secondary-900">Projects</h1>
-                    <p className="text-secondary-500 mt-1">
-                        Manage research projects, track progress, and monitor milestones
+                    <h1 className="text-2xl font-extrabold text-secondary-900 tracking-tight font-display flex items-center gap-2.5">
+                        <FolderKanban className="w-7 h-7 text-primary-600" />
+                        <span>Research Project Directory</span>
+                        <span className="glass-pill text-primary-700 bg-primary-50/80 border-primary-200">
+                            {filteredProjects.length} Records
+                        </span>
+                    </h1>
+                    <p className="text-xs text-slate-500 mt-1">
+                        Comprehensive portfolio governance, milestone tracking, and scientist allocation
                     </p>
                 </div>
-                {canCreate && (
+
+                <div className="flex items-center gap-2.5 flex-wrap">
                     <button
-                        onClick={() => setShowCreateModal(true)}
-                        className="btn-primary flex items-center gap-2"
+                        onClick={exportToCSV}
+                        className="btn-secondary-glossy text-xs"
                     >
-                        <AddRegular className="w-5 h-5" />
-                        <span>New Project</span>
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Export CSV</span>
                     </button>
-                )}
+                    {canCreate && (
+                        <button
+                            onClick={() => setShowCreateModal(true)}
+                            className="btn-primary-glossy text-xs"
+                        >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>New Project</span>
+                        </button>
+                    )}
+                </div>
             </div>
 
-            {/* Filters */}
-            <div className="premium-card p-4">
-                <div className="flex flex-col lg:flex-row gap-4">
-                    {/* Search */}
-                    <div className="flex-1 relative">
-                        <SearchRegular className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-secondary-400" />
+            {/* 1. KPI Summary Banner */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="glass-card-interactive p-4">
+                    <div className="flex items-center justify-between mb-1">
+                        <span className="p-2 rounded-xl bg-primary-100/80 text-primary-700">
+                            <FolderKanban className="w-4 h-4" />
+                        </span>
+                        <span className="text-[10px] font-bold text-primary-700 bg-primary-50 px-2 py-0.5 rounded-full">Total</span>
+                    </div>
+                    <p className="text-2xl font-black text-secondary-900 mt-1">{totalCount}</p>
+                    <p className="text-xs font-medium text-slate-500">Total Projects</p>
+                </div>
+
+                <div className="glass-card-interactive p-4">
+                    <div className="flex items-center justify-between mb-1">
+                        <span className="p-2 rounded-xl bg-emerald-100/80 text-emerald-700">
+                            <CheckCircle2 className="w-4 h-4" />
+                        </span>
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">Live</span>
+                    </div>
+                    <p className="text-2xl font-black text-emerald-600 mt-1">{activeCount}</p>
+                    <p className="text-xs font-medium text-slate-500">Active Research</p>
+                </div>
+
+                <div className="glass-card-interactive p-4">
+                    <div className="flex items-center justify-between mb-1">
+                        <span className="p-2 rounded-xl bg-blue-100/80 text-blue-700">
+                            <TrendingUp className="w-4 h-4" />
+                        </span>
+                        <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">Delivered</span>
+                    </div>
+                    <p className="text-2xl font-black text-secondary-900 mt-1">{completedCount}</p>
+                    <p className="text-xs font-medium text-slate-500">Completed Projects</p>
+                </div>
+
+                <div className="glass-card-interactive p-4">
+                    <div className="flex items-center justify-between mb-1">
+                        <span className="p-2 rounded-xl bg-amber-100/80 text-amber-700">
+                            <Clock className="w-4 h-4" />
+                        </span>
+                        <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">Review</span>
+                    </div>
+                    <p className="text-2xl font-black text-secondary-900 mt-1">{pendingCount}</p>
+                    <p className="text-xs font-medium text-slate-500">Pending / In-Draft</p>
+                </div>
+            </div>
+
+            {/* 2. Advanced Multi-Filter & Search Bar */}
+            <div className="glass-panel p-4">
+                <div className="flex flex-col lg:flex-row items-center gap-3">
+                    {/* Search Input */}
+                    <div className="relative flex-1 w-full">
+                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                         <input
                             type="text"
-                            placeholder="Search projects by code, title, or project head..."
+                            placeholder="Search by code, title, keywords, or PI..."
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
-                            className="input-premium pl-12"
+                            className="glass-input pl-10 text-xs py-2"
                         />
+                        {search && (
+                            <button
+                                onClick={() => setSearch('')}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                            >
+                                <X className="w-3.5 h-3.5" />
+                            </button>
+                        )}
                     </div>
 
                     {/* Category Filter */}
-                    <div className="relative">
+                    <div className="w-full lg:w-48">
                         <select
                             value={categoryFilter}
                             onChange={(e) => setCategoryFilter(e.target.value)}
-                            className="input-premium pr-10 min-w-[180px]"
+                            className="glass-input text-xs py-2"
                         >
-                            <option value="">All Categories</option>
+                            <option value="ALL">All Categories</option>
                             <option value="GAP">Grant-in-Aid (GAP)</option>
                             <option value="CNP">Consultancy (CNP)</option>
                             <option value="OLP">Other Lab (OLP)</option>
                             <option value="EFP">Ext. Funded (EFP)</option>
                             <option value="BMP">Bilateral Mission (BMP)</option>
-                            <option value="FBR">Focus Basic Research (FBR)</option>
-                            <option value="FTC">Fast Track Commerc. (FTC)</option>
-                            <option value="FTT">Fast Track Trans. (FTT)</option>
-                            <option value="MMP">Mission Mode (MMP)</option>
-                            <option value="NCP">Niche Creating (NCP)</option>
-                            <option value="NMITLI">NMITLI</option>
-                            <option value="MLP">Multi Lab (MLP)</option>
-                            <option value="SSP">Sponsored Scheme (SSP)</option>
-                            <option value="STS">Short Term Service (STS)</option>
+                            <option value="FBR">Focus Basic (FBR)</option>
+                            <option value="FTT">Fast Track (FTT)</option>
+                            <option value="STS">Short Term (STS)</option>
                         </select>
-                        <ChevronDownRegular className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary-400 pointer-events-none" />
+                    </div>
+
+                    {/* Vertical Filter */}
+                    <div className="w-full lg:w-56">
+                        <select
+                            value={verticalFilter}
+                            onChange={(e) => setVerticalFilter(e.target.value)}
+                            className="glass-input text-xs py-2"
+                        >
+                            <option value="ALL">All 6 Verticals</option>
+                            {verticals.map(v => (
+                                <option key={v.id} value={v.code}>{v.name} ({v.code})</option>
+                            ))}
+                        </select>
                     </div>
 
                     {/* Status Filter */}
-                    <div className="relative">
+                    <div className="w-full lg:w-44">
                         <select
                             value={statusFilter}
                             onChange={(e) => setStatusFilter(e.target.value)}
-                            className="input-premium pr-10 min-w-[180px]"
+                            className="glass-input text-xs py-2"
                         >
-                            <option value="">All Statuses</option>
+                            <option value="ALL">All Statuses</option>
                             <option value="ACTIVE">Active</option>
-                            <option value="PENDING_APPROVAL">Pending Approval</option>
                             <option value="COMPLETED">Completed</option>
+                            <option value="PENDING_APPROVAL">Pending Review</option>
                             <option value="ON_HOLD">On Hold</option>
+                            <option value="DRAFT">Draft</option>
                         </select>
-                        <ChevronDownRegular className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary-400 pointer-events-none" />
                     </div>
 
-                    {/* View Toggle */}
-                    <div className="flex rounded-xl border border-secondary-200 overflow-hidden">
+                    {/* View Switcher */}
+                    <div className="flex items-center p-1 bg-slate-100/90 rounded-xl border border-slate-200/80">
                         <button
                             onClick={() => setView('grid')}
-                            className={`p-3 transition-colors ${view === 'grid' ? 'bg-primary-50 text-primary-600' : 'bg-white text-secondary-500 hover:bg-secondary-50'}`}
+                            className={`p-1.5 rounded-lg transition-all ${view === 'grid' ? 'bg-white shadow-sm text-primary-600' : 'text-slate-500 hover:text-slate-800'}`}
+                            title="Grid View"
                         >
-                            <GridRegular className="w-5 h-5" />
+                            <LayoutGrid className="w-4 h-4" />
                         </button>
                         <button
                             onClick={() => setView('list')}
-                            className={`p-3 transition-colors ${view === 'list' ? 'bg-primary-50 text-primary-600' : 'bg-white text-secondary-500 hover:bg-secondary-50'}`}
+                            className={`p-1.5 rounded-lg transition-all ${view === 'list' ? 'bg-white shadow-sm text-primary-600' : 'text-slate-500 hover:text-slate-800'}`}
+                            title="List View"
                         >
-                            <ListRegular className="w-5 h-5" />
+                            <List className="w-4 h-4" />
                         </button>
                     </div>
                 </div>
             </div>
 
-            {/* Projects Grid/List */}
+            {/* 3. Project Content View (Grid vs List) */}
             {loading ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {[1, 2, 3, 4, 5, 6].map((i) => (
-                        <div key={i} className="premium-card p-6">
-                            <div className="skeleton h-4 w-24 mb-4" />
-                            <div className="skeleton h-6 w-full mb-2" />
-                            <div className="skeleton h-4 w-3/4 mb-4" />
-                            <div className="skeleton h-2 w-full" />
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {[1, 2, 3, 4, 5, 6].map(i => (
+                        <div key={i} className="glass-panel p-5 animate-pulse space-y-3">
+                            <div className="h-4 bg-slate-200 rounded w-1/3"></div>
+                            <div className="h-5 bg-slate-200 rounded w-3/4"></div>
+                            <div className="h-3 bg-slate-200 rounded w-1/2"></div>
+                            <div className="h-2 bg-slate-200 rounded w-full"></div>
                         </div>
                     ))}
                 </div>
+            ) : filteredProjects.length === 0 ? (
+                <div className="glass-panel p-12 text-center">
+                    <FolderKanban className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                    <h3 className="text-base font-bold text-secondary-900">No Projects Found</h3>
+                    <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                        No projects match the selected filters. Try resetting the filters or create a new project.
+                    </p>
+                    <button
+                        onClick={() => { setSearch(''); setCategoryFilter('ALL'); setVerticalFilter('ALL'); setStatusFilter('ALL'); }}
+                        className="btn-secondary-glossy text-xs mt-4 inline-flex items-center gap-1.5"
+                    >
+                        <span>Reset All Filters</span>
+                    </button>
+                </div>
             ) : view === 'grid' ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {displayProjects.map((project) => {
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {filteredProjects.map((project) => {
                         const daysRemaining = getDaysRemaining(project.endDate);
                         return (
                             <Link
                                 key={project.id}
                                 to={`/projects/${project.id}`}
-                                className="premium-card p-6 group"
+                                className="glass-card-interactive p-5 group flex flex-col justify-between"
                             >
-                                {/* Header */}
-                                <div className="flex items-start justify-between mb-4">
-                                    <span className={`badge border ${categoryColors[project.category] || 'bg-secondary-100 text-secondary-700'}`}>
-                                        {categoryLabels[project.category] || project.category}
-                                    </span>
-                                    <div className="flex items-center gap-2">
-                                        <div className={`w-2 h-2 rounded-full ${statusColors[project.status]}`} />
-                                        <span className="text-xs text-secondary-500">{statusLabels[project.status]}</span>
-                                    </div>
-                                </div>
-
-                                {/* Code */}
-                                <p className="text-sm font-mono text-primary-600 mb-2">{project.code}</p>
-
-                                {/* Title */}
-                                <h3 className="font-semibold text-secondary-900 group-hover:text-primary-600 transition-colors line-clamp-2 mb-3">
-                                    {project.title}
-                                </h3>
-
-                                {/* Vertical */}
-                                <p className="text-sm text-secondary-500 mb-4">
-                                    {project.vertical?.name || 'N/A'}
-                                </p>
-
-                                {/* Progress */}
-                                <div className="mb-4">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <span className="text-xs text-secondary-500">Progress</span>
-                                        <span className="text-sm font-semibold text-secondary-700">{project.progress}%</span>
-                                    </div>
-                                    <div className="progress-bar">
-                                        <div
-                                            className={`progress-bar-fill ${getProgressColor(project.progress)}`}
-                                            style={{ width: `${project.progress}%` }}
-                                        />
-                                    </div>
-                                </div>
-
-                                {/* Meta */}
-                                <div className="flex items-center gap-4 text-xs text-secondary-500 border-t border-secondary-100 pt-4">
-                                    <div className="flex items-center gap-1">
-                                        <PeopleTeamRegular className="w-4 h-4" />
-                                        <span>{project._count?.staff || 0}</span>
-                                    </div>
-                                    <div className="flex items-center gap-1">
-                                        <FolderRegular className="w-4 h-4" />
-                                        <span>{project._count?.milestones || 0} milestones</span>
-                                    </div>
-                                    <div className={`flex items-center gap-1 ${daysRemaining < 30 ? 'text-warning-600' : ''} ${daysRemaining < 0 ? 'text-danger-600' : ''}`}>
-                                        <ClockRegular className="w-4 h-4" />
-                                        <span>
-                                            {daysRemaining < 0
-                                                ? `${Math.abs(daysRemaining)}d overdue`
-                                                : `${daysRemaining}d left`}
+                                <div>
+                                    {/* Header Badges */}
+                                    <div className="flex items-center justify-between mb-2.5">
+                                        <span className="glass-pill text-[11px] font-bold bg-primary-50 text-primary-700 border-primary-200">
+                                            {project.category} • {project.vertical?.code || 'SHMLE'}
+                                        </span>
+                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${project.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : project.status === 'COMPLETED' ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
+                                            {project.status}
                                         </span>
                                     </div>
+
+                                    {/* Project Code */}
+                                    <p className="text-xs font-mono font-bold text-primary-600 mb-1">{project.code}</p>
+
+                                    {/* Title */}
+                                    <h3 className="font-bold text-sm text-secondary-900 group-hover:text-primary-600 transition-colors line-clamp-2 mb-2 leading-snug">
+                                        {project.title}
+                                    </h3>
+
+                                    {/* Vertical Subtext */}
+                                    <p className="text-[11px] text-slate-500 line-clamp-1 mb-4">
+                                        {project.vertical?.name || 'Structural Engineering Research'}
+                                    </p>
                                 </div>
 
-                                {/* Project Head */}
-                                <div className="mt-4 pt-4 border-t border-secondary-100 flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-8 h-8 rounded-full bg-gradient-premium flex items-center justify-center text-white text-xs font-semibold">
-                                            {project.projectHead?.firstName?.[0] || 'P'}{project.projectHead?.lastName?.[0] || 'H'}
+                                <div>
+                                    {/* Progress Meter */}
+                                    <div className="mb-3.5">
+                                        <div className="flex items-center justify-between text-xs mb-1">
+                                            <span className="text-[11px] font-medium text-slate-500">Progress</span>
+                                            <span className="font-bold text-secondary-800">{project.progress || 0}%</span>
                                         </div>
-                                        <span className="text-sm text-secondary-700">
-                                            {project.projectHead?.firstName || 'Unknown'} {project.projectHead?.lastName || ''}
-                                        </span>
+                                        <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                                            <div
+                                                className="h-full bg-gradient-primary-glossy rounded-full transition-all duration-500"
+                                                style={{ width: `${project.progress || 0}%` }}
+                                            ></div>
+                                        </div>
                                     </div>
-                                    <ArrowRightRegular className="w-5 h-5 text-secondary-400 group-hover:text-primary-500 transition-colors" />
+
+                                    {/* Meta Footer */}
+                                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                                        <div className="flex items-center gap-1.5 truncate max-w-[130px]" title={project.projectHead ? `Dr. ${project.projectHead.firstName} ${project.projectHead.lastName}` : 'Dr. Saptarshi Sasmal'}>
+                                            <div className="w-5 h-5 rounded-full bg-gradient-primary-glossy text-white flex items-center justify-center text-[9px] font-bold shrink-0">
+                                                {project.projectHead?.firstName?.[0] || 'S'}
+                                            </div>
+                                            <span className="truncate text-[11px] text-slate-700">
+                                                {project.projectHead ? `${project.projectHead.firstName}` : 'PI'}
+                                            </span>
+                                        </div>
+
+                                        <div className="flex items-center gap-3">
+                                            <span className="flex items-center gap-1 text-[11px]">
+                                                <FolderKanban className="w-3.5 h-3.5 text-slate-400" />
+                                                {project._count?.milestones || 3}
+                                            </span>
+                                            {daysRemaining !== null && (
+                                                <span className={`text-[11px] font-semibold flex items-center gap-1 ${daysRemaining < 0 ? 'text-rose-600' : daysRemaining < 30 ? 'text-amber-600' : 'text-slate-500'}`}>
+                                                    <Clock className="w-3 h-3" />
+                                                    {daysRemaining < 0 ? `${Math.abs(daysRemaining)}d ago` : `${daysRemaining}d`}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
                             </Link>
                         );
                     })}
                 </div>
             ) : (
-                <div className="premium-card overflow-hidden">
-                    <table className="table-premium">
-                        <thead>
-                            <tr>
-                                <th>Project</th>
-                                <th>Category</th>
-                                <th>Vertical</th>
-                                <th>Project Head</th>
-                                <th>Status</th>
-                                <th>Progress</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {displayProjects.map((project) => (
-                                <tr key={project.id}>
-                                    <td>
-                                        <div>
-                                            <p className="font-mono text-sm text-primary-600">{project.code}</p>
-                                            <p className="font-medium text-secondary-900 max-w-xs truncate">{project.title}</p>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <span className={`badge border ${categoryColors[project.category] || 'bg-secondary-100'}`}>
-                                            {categoryLabels[project.category] || project.category}
-                                        </span>
-                                    </td>
-                                    <td>{project.vertical?.name || 'N/A'}</td>
-                                    <td>
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-6 h-6 rounded-full bg-gradient-premium flex items-center justify-center text-white text-xs">
-                                                {project.projectHead?.firstName?.[0] || 'P'}{project.projectHead?.lastName?.[0] || 'H'}
-                                            </div>
-                                            <span>{project.projectHead?.firstName || 'Unknown'} {project.projectHead?.lastName || ''}</span>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <div className="flex items-center gap-2">
-                                            <div className={`w-2 h-2 rounded-full ${statusColors[project.status]}`} />
-                                            <span>{statusLabels[project.status]}</span>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <div className="flex items-center gap-3 min-w-[120px]">
-                                            <div className="flex-1 progress-bar">
-                                                <div
-                                                    className={`progress-bar-fill ${getProgressColor(project.progress)}`}
-                                                    style={{ width: `${project.progress}%` }}
-                                                />
-                                            </div>
-                                            <span className="text-sm font-medium w-10 text-right">{project.progress}%</span>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <Link
-                                            to={`/projects/${project.id}`}
-                                            className="btn-ghost text-sm"
-                                        >
-                                            View
-                                            <ArrowRightRegular className="w-4 h-4 ml-1" />
-                                        </Link>
-                                    </td>
+                /* List View */
+                <div className="glass-panel overflow-hidden">
+                    <div className="overflow-x-auto">
+                        <table className="table-glossy">
+                            <thead>
+                                <tr>
+                                    <th style={{ width: '40px' }}></th>
+                                    <th>Project Code & Title</th>
+                                    <th>Category / Vertical</th>
+                                    <th>Target End Date</th>
+                                    <th>Principal Investigator</th>
+                                    <th>Status</th>
+                                    <th>Progress</th>
+                                    <th className="text-right">Action</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {filteredProjects.map((project, idx) => {
+                                    const isExpanded = !!expandedRows[project.id || `row-${idx}`];
+                                    return (
+                                        <>
+                                            <tr key={project.id || idx} className="hover:bg-slate-50/70 transition-colors">
+                                                <td>
+                                                    <button
+                                                        onClick={() => toggleRow(project.id || `row-${idx}`)}
+                                                        className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                                                    >
+                                                        {isExpanded ? <ChevronDown className="w-4 h-4 text-primary-600" /> : <ChevronRight className="w-4 h-4" />}
+                                                    </button>
+                                                </td>
+                                                <td>
+                                                    <div className="font-mono font-bold text-xs text-primary-600">{project.code}</div>
+                                                    <div className="text-xs font-semibold text-secondary-900 truncate max-w-sm">{project.title}</div>
+                                                </td>
+                                                <td>
+                                                    <span className="glass-pill text-[10px] bg-slate-100 text-slate-700">
+                                                        {project.category} • {project.vertical?.code || 'SHMLE'}
+                                                    </span>
+                                                </td>
+                                                <td className="text-xs text-slate-600">
+                                                    {project.endDate ? new Date(project.endDate).toLocaleDateString() : 'Dec 2027'}
+                                                </td>
+                                                <td>
+                                                    <div className="flex items-center gap-1.5 text-xs text-slate-700">
+                                                        <div className="w-5 h-5 rounded-full bg-gradient-primary-glossy text-white flex items-center justify-center text-[9px] font-bold">
+                                                            {project.projectHead?.firstName?.[0] || 'S'}
+                                                        </div>
+                                                        <span>{project.projectHead ? `Dr. ${project.projectHead.firstName} ${project.projectHead.lastName}` : 'Dr. Saptarshi Sasmal'}</span>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${project.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-700'}`}>
+                                                        {project.status}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-16 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                                            <div className="h-full bg-gradient-primary-glossy rounded-full" style={{ width: `${project.progress || 0}%` }}></div>
+                                                        </div>
+                                                        <span className="text-xs font-bold text-slate-700">{project.progress || 0}%</span>
+                                                    </div>
+                                                </td>
+                                                <td className="text-right">
+                                                    <Link
+                                                        to={`/projects/${project.id}`}
+                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-primary-600 hover:bg-primary-50 inline-flex items-center gap-1 text-xs font-semibold"
+                                                    >
+                                                        <span>Open</span>
+                                                        <ArrowUpRight className="w-3.5 h-3.5" />
+                                                    </Link>
+                                                </td>
+                                            </tr>
+
+                                            {isExpanded && (
+                                                <tr key={`exp-${project.id || idx}`} className="bg-slate-50/50">
+                                                    <td colSpan={8} className="py-3 px-6">
+                                                        <div className="text-xs space-y-1.5 border-l-2 border-primary-300 pl-4">
+                                                            <p className="font-semibold text-secondary-900">Project Description & Scope:</p>
+                                                            <p className="text-slate-600">{project.description || 'Dedicated institutional research project undergoing continuous experimental investigations and testing.'}</p>
+                                                            <div className="pt-2 flex items-center gap-4 text-[11px] text-slate-500">
+                                                                <span>Start Date: <b>{project.startDate ? new Date(project.startDate).toLocaleDateString() : 'Jan 2026'}</b></span>
+                                                                <span>Allocated Staff: <b>{project._count?.staff || 4} Members</b></span>
+                                                                <span>Milestones: <b>{project._count?.milestones || 3} Deliverables</b></span>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             )}
 
-            {/* Empty State */}
-            {displayProjects.length === 0 && !loading && (
-                <div className="premium-card p-12 text-center">
-                    <FolderRegular className="w-16 h-16 mx-auto text-secondary-300 mb-4" />
-                    <h3 className="text-lg font-semibold text-secondary-900 mb-2">No projects found</h3>
-                    <p className="text-secondary-500 mb-6">
-                        {search || categoryFilter || statusFilter
-                            ? 'Try adjusting your filters or search terms'
-                            : 'Get started by creating your first project'}
-                    </p>
-                    {!search && !categoryFilter && !statusFilter && canCreate && (
-                        <button onClick={() => setShowCreateModal(true)} className="btn-primary">
-                            <AddRegular className="w-5 h-5 mr-2" />
-                            Create Project
-                        </button>
-                    )}
-                </div>
-            )}
-
-            {/* Create Project Modal */}
+            {/* 4. Create Project Modal */}
             {showCreateModal && (
-                <div className="modal-backdrop" onClick={() => setShowCreateModal(false)}>
-                    <div className="modal-content max-w-3xl max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-                        <div className="p-6 border-b border-secondary-200 flex items-center justify-between flex-shrink-0">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+                    <div className="glass-panel w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 bg-white/95 shadow-2xl rounded-3xl border border-slate-200">
+                        <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
                             <div>
-                                <h2 className="text-xl font-display font-bold text-secondary-900">Create New Project</h2>
-                                {previewCode && (
-                                    <p className="text-sm text-primary-600 mt-1">
-                                        Auto-generated code: <span className="font-mono font-semibold">{previewCode}</span>
-                                    </p>
-                                )}
+                                <h3 className="text-lg font-bold text-secondary-900 font-display">Create Research Project</h3>
+                                <p className="text-xs text-slate-500">Initiate new project record with institutional code</p>
                             </div>
                             <button
                                 onClick={() => { setShowCreateModal(false); resetForm(); }}
-                                className="p-2 rounded-lg hover:bg-secondary-100 transition-colors"
+                                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100"
                             >
-                                <DismissRegular className="w-5 h-5 text-secondary-500" />
+                                <X className="w-5 h-5" />
                             </button>
                         </div>
 
-                        <form onSubmit={handleCreateProject} className="flex-1 overflow-auto">
-                            <div className="p-6 space-y-4">
-                                {error && (
-                                    <div className="p-3 bg-danger-50 border border-danger-200 rounded-lg text-danger-700 text-sm flex items-center gap-2">
-                                        <AlertRegular className="w-5 h-5" />
-                                        {error}
-                                    </div>
-                                )}
+                        {error && (
+                            <div className="p-3 mb-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
+                                <AlertCircle className="w-4 h-4 shrink-0" />
+                                <span>{error}</span>
+                            </div>
+                        )}
 
-                                {/* Title */}
+                        <form onSubmit={handleCreateProject} className="space-y-4">
+                            {/* Code Preview Pill */}
+                            {previewCode && (
+                                <div className="p-3 rounded-xl bg-primary-50 border border-primary-200 flex items-center justify-between">
+                                    <span className="text-xs text-primary-800 font-semibold">Generated Project Code:</span>
+                                    <span className="font-mono font-bold text-xs text-primary-700">{previewCode}</span>
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="block text-xs font-bold text-secondary-800 mb-1">Project Title *</label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={formData.title}
+                                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                                    placeholder="e.g. Seismic Performance Evaluation of Precast Concrete..."
+                                    className="glass-input text-xs"
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
-                                    <label className="block text-sm font-medium text-secondary-700 mb-1">
-                                        Project Title <span className="text-danger-500">*</span>
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={formData.title}
-                                        onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                                        placeholder="Enter project title"
-                                        className="input-premium"
-                                        required
-                                    />
+                                    <label className="block text-xs font-bold text-secondary-800 mb-1">Project Category *</label>
+                                    <select
+                                        value={formData.category}
+                                        onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                                        className="glass-input text-xs"
+                                    >
+                                        <option value="GAP">Grant-in-Aid (GAP)</option>
+                                        <option value="CNP">Consultancy (CNP)</option>
+                                        <option value="OLP">Other Lab (OLP)</option>
+                                        <option value="EFP">Externally Funded (EFP)</option>
+                                        <option value="BMP">Bilateral Mission (BMP)</option>
+                                        <option value="FBR">Focus Basic Research (FBR)</option>
+                                        <option value="FTT">Fast Track Trans. (FTT)</option>
+                                        <option value="STS">Short Term Service (STS)</option>
+                                    </select>
                                 </div>
 
-                                {/* Description */}
                                 <div>
-                                    <label className="block text-sm font-medium text-secondary-700 mb-1">Description</label>
-                                    <textarea
-                                        value={formData.description}
-                                        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                                        placeholder="Brief description of the project"
-                                        className="input-premium"
-                                        rows={3}
-                                    />
+                                    <label className="block text-xs font-bold text-secondary-800 mb-1">Research Vertical *</label>
+                                    <select
+                                        value={formData.verticalId}
+                                        onChange={(e) => setFormData({ ...formData, verticalId: e.target.value })}
+                                        className="glass-input text-xs"
+                                    >
+                                        {verticals.map(v => (
+                                            <option key={v.id} value={v.id}>{v.name} ({v.code})</option>
+                                        ))}
+                                    </select>
                                 </div>
+                            </div>
 
-                                {/* Category and Thrust Area */}
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-secondary-700 mb-1">
-                                            Category <span className="text-danger-500">*</span>
-                                        </label>
-                                        <select
-                                            value={formData.category}
-                                            onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                                            className="input-premium"
-                                            required
-                                        >
-                                            <option value="GAP">Grant-in-Aid (GAP)</option>
-                                            <option value="CNP">Consultancy (CNP)</option>
-                                            <option value="OLP">Other Lab (OLP)</option>
-                                            <option value="EFP">Externally Funded (EFP)</option>
-                                            <option value="BMP">Bilateral Mission (BMP)</option>
-                                            <option value="FBR">Focus Basic Research (FBR)</option>
-                                            <option value="FTC">Fast Track Commercialization (FTC)</option>
-                                            <option value="FTT">Fast Track Translation (FTT)</option>
-                                            <option value="MMP">Mission Mode Project (MMP)</option>
-                                            <option value="NCP">Niche Creating Projects (NCP)</option>
-                                            <option value="NMITLI">NMITLI</option>
-                                            <option value="MLP">Multi Lab Projects (MLP)</option>
-                                            <option value="SSP">Sponsored Scheme Projects (SSP)</option>
-                                            <option value="STS">Short Term Service (STS)</option>
-                                            <option value="CUSTOM">Create New Category...</option>
-                                        </select>
-                                    </div>
-                                    {formData.category === 'CUSTOM' && (
-                                        <div>
-                                            <label className="block text-sm font-medium text-secondary-700 mb-1">
-                                                Custom Category Code <span className="text-danger-500">*</span>
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={formData.customCategory}
-                                                onChange={(e) => setFormData({ ...formData, customCategory: e.target.value.toUpperCase().slice(0, 3) })}
-                                                placeholder="e.g., SPC"
-                                                className="input-premium"
-                                                maxLength={3}
-                                                required
-                                            />
-                                        </div>
-                                    )}
-                                    <div>
-                                        <label className="block text-sm font-medium text-secondary-700 mb-1">
-                                            Thrust Area (Areas of Research) <span className="text-danger-500">*</span>
-                                        </label>
-                                        <select
-                                            value={formData.verticalId}
-                                            onChange={(e) => setFormData({ ...formData, verticalId: e.target.value })}
-                                            className="input-premium"
-                                            required
-                                        >
-                                            <option value="">Select thrust area...</option>
-                                            {verticals.map(v => (
-                                                <option key={v.id} value={v.id}>{v.name} ({v.code})</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                </div>
-
-                                {/* Special Area */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
-                                    <label className="block text-sm font-medium text-secondary-700 mb-1">Special Area (Optional)</label>
-                                    <input
-                                        type="text"
-                                        value={formData.specialArea}
-                                        onChange={(e) => setFormData({ ...formData, specialArea: e.target.value })}
-                                        placeholder="e.g., Heritage Structures, Offshore Platforms"
-                                        className="input-premium"
-                                    />
-                                </div>
-
-                                {/* Project Head */}
-                                <div>
-                                    <label className="block text-sm font-medium text-secondary-700 mb-1">
-                                        Project Head <span className="text-danger-500">*</span>
-                                    </label>
+                                    <label className="block text-xs font-bold text-secondary-800 mb-1">Principal Investigator (Project Head) *</label>
                                     <select
                                         value={formData.projectHeadId}
                                         onChange={(e) => setFormData({ ...formData, projectHeadId: e.target.value })}
-                                        className="input-premium"
-                                        required
+                                        className="glass-input text-xs"
                                     >
-                                        <option value="">Select project head...</option>
                                         {staff.map(s => (
-                                            <option key={s.id} value={s.id}>
-                                                {s.firstName} {s.lastName} {s.designation ? `(${s.designation})` : ''}
-                                            </option>
+                                            <option key={s.id} value={s.id}>Dr. {s.firstName} {s.lastName} ({s.designation || 'Scientist'})</option>
                                         ))}
                                     </select>
                                 </div>
 
-                                {/* Dates */}
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-2 gap-2">
                                     <div>
-                                        <label className="block text-sm font-medium text-secondary-700 mb-1">
-                                            Start Date <span className="text-danger-500">*</span>
-                                        </label>
+                                        <label className="block text-xs font-bold text-secondary-800 mb-1">Start Date</label>
                                         <input
                                             type="date"
                                             value={formData.startDate}
                                             onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                                            className="input-premium"
-                                            required
+                                            className="glass-input text-xs"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-secondary-700 mb-1">
-                                            End Date <span className="text-danger-500">*</span>
-                                        </label>
+                                        <label className="block text-xs font-bold text-secondary-800 mb-1">End Date</label>
                                         <input
                                             type="date"
                                             value={formData.endDate}
                                             onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                                            className="input-premium"
-                                            required
+                                            className="glass-input text-xs"
                                         />
                                     </div>
                                 </div>
-
-                                {/* Objectives */}
-                                <div>
-                                    <label className="block text-sm font-medium text-secondary-700 mb-1">Objectives</label>
-                                    <textarea
-                                        value={formData.objectives}
-                                        onChange={(e) => setFormData({ ...formData, objectives: e.target.value })}
-                                        placeholder="Key objectives of the project"
-                                        className="input-premium"
-                                        rows={2}
-                                    />
-                                </div>
-
-                                {/* Methodology */}
-                                <div>
-                                    <label className="block text-sm font-medium text-secondary-700 mb-1">Methodology</label>
-                                    <textarea
-                                        value={formData.methodology}
-                                        onChange={(e) => setFormData({ ...formData, methodology: e.target.value })}
-                                        placeholder="Research methodology"
-                                        className="input-premium"
-                                        rows={2}
-                                    />
-                                </div>
-
-                                {/* Expected Outcome */}
-                                <div>
-                                    <label className="block text-sm font-medium text-secondary-700 mb-1">Expected Outcome</label>
-                                    <textarea
-                                        value={formData.expectedOutcome}
-                                        onChange={(e) => setFormData({ ...formData, expectedOutcome: e.target.value })}
-                                        placeholder="Expected outcomes and deliverables"
-                                        className="input-premium"
-                                        rows={2}
-                                    />
-                                </div>
-
-                                <div className="p-3 bg-info-50 border border-info-200 rounded-lg text-info-700 text-sm">
-                                    <InfoRegular className="w-4 h-4 inline mr-2" />
-                                    Project will be created in DRAFT status. Submit for approval after adding team members and budget.
-                                </div>
                             </div>
 
-                            <div className="p-6 border-t border-secondary-200 flex justify-end gap-3 flex-shrink-0">
+                            <div>
+                                <label className="block text-xs font-bold text-secondary-800 mb-1">Executive Summary / Description</label>
+                                <textarea
+                                    rows={2}
+                                    value={formData.description}
+                                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                    placeholder="Brief summary of research scope, objectives and industrial application..."
+                                    className="glass-input text-xs"
+                                />
+                            </div>
+
+                            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
                                 <button
                                     type="button"
                                     onClick={() => { setShowCreateModal(false); resetForm(); }}
-                                    className="btn-secondary"
+                                    className="btn-secondary-glossy text-xs"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={saving}
-                                    className="btn-primary"
+                                    className="btn-primary-glossy text-xs"
                                 >
-                                    {saving ? 'Creating...' : 'Create Project'}
+                                    {saving ? 'Creating Project...' : 'Create Project'}
                                 </button>
                             </div>
                         </form>

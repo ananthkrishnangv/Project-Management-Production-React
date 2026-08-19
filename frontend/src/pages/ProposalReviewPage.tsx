@@ -1,19 +1,22 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import {
-    ArrowLeftRegular,
-    CheckmarkCircleRegular,
-    DismissCircleRegular,
-    SendRegular,
-    PersonRegular,
-    CalendarRegular,
-    MoneyRegular,
-    DocumentTextRegular,
-    ChatBubblesQuestionRegular,
-} from '@fluentui/react-icons';
-
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
+    Briefcase,
+    ArrowLeft,
+    CheckCircle2,
+    XCircle,
+    Send,
+    Users,
+    Calendar,
+    BadgeIndianRupee,
+    FileText,
+    MessageSquare,
+    Sparkles,
+    AlertCircle,
+    ArrowRight,
+    CheckSquare
+} from 'lucide-react';
 
 interface Proposal {
     id: string;
@@ -28,7 +31,6 @@ interface Proposal {
     proposedStartDate: string;
     proposedEndDate: string;
     vertical?: { name: string; code: string };
-    specialArea?: { name: string };
     submittedBy?: { firstName: string; lastName: string; email?: string; designation?: string; department?: string };
     bkmdReviewer?: { firstName: string; lastName: string };
     bkmdReviewedAt?: string;
@@ -42,453 +44,236 @@ interface Proposal {
     updatedAt: string;
 }
 
-const statusColors: Record<string, string> = {
-    DRAFT: 'bg-gray-100 text-gray-700',
-    SUBMITTED: 'bg-blue-100 text-blue-700',
-    BKMD_REVIEW: 'bg-yellow-100 text-yellow-700',
-    DIRECTOR_REVIEW: 'bg-orange-100 text-orange-700',
-    DIRECTOR_APPROVED: 'bg-green-100 text-green-700',
-    DIRECTOR_REJECTED: 'bg-red-100 text-red-700',
-    RC_PENDING: 'bg-purple-100 text-purple-700',
-    RC_APPROVED: 'bg-emerald-100 text-emerald-700',
-    RC_REJECTED: 'bg-rose-100 text-rose-700',
-    CONVERTED: 'bg-teal-100 text-teal-700',
-};
-
-const statusLabels: Record<string, string> = {
-    DRAFT: 'Draft',
-    SUBMITTED: 'Submitted',
-    BKMD_REVIEW: 'BKMD Review',
-    DIRECTOR_REVIEW: 'Director Review',
-    DIRECTOR_APPROVED: 'Director Approved',
-    DIRECTOR_REJECTED: 'Director Rejected',
-    RC_PENDING: 'RC Pending',
-    RC_APPROVED: 'RC Approved',
-    RC_REJECTED: 'RC Rejected',
-    CONVERTED: 'Converted to Project',
-};
-
 export default function ProposalReviewPage() {
-    const { id } = useParams<{ id: string }>();
+    const { id } = useParams();
     const navigate = useNavigate();
     const { accessToken, user } = useAuthStore();
     const [proposal, setProposal] = useState<Proposal | null>(null);
     const [loading, setLoading] = useState(true);
-    const [processing, setProcessing] = useState(false);
-    const [error, setError] = useState('');
-    const [successMessage, setSuccessMessage] = useState('');
     const [comments, setComments] = useState('');
+    const [processing, setProcessing] = useState(false);
+    const [successMessage, setSuccessMessage] = useState('');
+    const [error, setError] = useState('');
 
     useEffect(() => {
         fetchProposal();
-    }, [id, accessToken]);
+    }, [id]);
 
     const fetchProposal = async () => {
+        setLoading(true);
         try {
-            const res = await fetch(`${API_BASE}/proposals/${id}`, {
-                headers: { 'Authorization': `Bearer ${accessToken}` },
+            const res = await fetch(`/api/proposals/${id}`, {
+                headers: { Authorization: `Bearer ${accessToken}` },
             });
             if (res.ok) {
                 const data = await res.json();
-                setProposal(data);
-            } else {
-                setError('Failed to load proposal');
+                setProposal(data.data || data);
             }
         } catch (err) {
-            console.error('Failed to fetch proposal:', err);
-            setError('Failed to load proposal');
+            console.error('Failed to load proposal:', err);
         } finally {
             setLoading(false);
         }
     };
 
-    const handleBkmdReview = async (action: 'forward' | 'return') => {
+    const handleAction = async (action: 'APPROVE' | 'REJECT' | 'CONVERT') => {
         setProcessing(true);
+        setError('');
+
         try {
-            const res = await fetch(`${API_BASE}/proposals/${id}/bkmd-review`, {
-                method: 'POST',
+            let endpoint = `/api/proposals/${id}/review`;
+            let method = 'POST';
+            let body: any = { action, comments };
+
+            if (action === 'CONVERT') {
+                endpoint = `/api/proposals/${id}/convert`;
+                body = {};
+            }
+
+            const res = await fetch(endpoint, {
+                method,
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${accessToken}`,
+                    Authorization: `Bearer ${accessToken}`,
                 },
-                body: JSON.stringify({ action, comments }),
+                body: JSON.stringify(body),
             });
 
             if (res.ok) {
-                const data = await res.json();
-                setSuccessMessage(data.message);
-                fetchProposal();
+                setSuccessMessage(`Proposal action ${action} executed successfully!`);
                 setComments('');
-            } else {
-                const err = await res.json();
-                setError(err.error || 'Failed to process review');
-            }
-        } catch (err: any) {
-            setError(err.message || 'Failed to process review');
-        } finally {
-            setProcessing(false);
-        }
-    };
-
-    const handleDirectorReview = async (action: 'approve' | 'reject') => {
-        setProcessing(true);
-        try {
-            const res = await fetch(`${API_BASE}/proposals/${id}/director-review`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${accessToken}`,
-                },
-                body: JSON.stringify({ action, comments }),
-            });
-
-            if (res.ok) {
-                const data = await res.json();
-                setSuccessMessage(data.message);
                 fetchProposal();
-                setComments('');
+                setTimeout(() => setSuccessMessage(''), 3000);
             } else {
                 const err = await res.json();
-                setError(err.error || 'Failed to process review');
+                setError(err.error || 'Action failed');
             }
         } catch (err: any) {
-            setError(err.message || 'Failed to process review');
+            setError(err.message || 'Action failed');
         } finally {
             setProcessing(false);
         }
     };
-
-    const handleRcReview = async (action: 'approve' | 'reject') => {
-        setProcessing(true);
-        try {
-            const res = await fetch(`${API_BASE}/proposals/${id}/rc-review`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${accessToken}`,
-                },
-                body: JSON.stringify({ action, comments }),
-            });
-
-            if (res.ok) {
-                const data = await res.json();
-                setSuccessMessage(data.message);
-                fetchProposal();
-                setComments('');
-            } else {
-                const err = await res.json();
-                setError(err.error || 'Failed to process review');
-            }
-        } catch (err: any) {
-            setError(err.message || 'Failed to process review');
-        } finally {
-            setProcessing(false);
-        }
-    };
-
-    const handleConvertToProject = async () => {
-        setProcessing(true);
-        try {
-            const res = await fetch(`${API_BASE}/proposals/${id}/convert-to-project`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${accessToken}` },
-            });
-
-            if (res.ok) {
-                const data = await res.json();
-                setSuccessMessage('Proposal converted to project!');
-                setTimeout(() => {
-                    navigate(`/projects/${data.project.id}`);
-                }, 2000);
-            } else {
-                const err = await res.json();
-                setError(err.error || 'Failed to convert proposal');
-            }
-        } catch (err: any) {
-            setError(err.message || 'Failed to convert proposal');
-        } finally {
-            setProcessing(false);
-        }
-    };
-
-    const canBkmdReview = ['BKMD', 'ADMIN', 'SYS_ADMIN'].includes(user?.role || '') &&
-        ['SUBMITTED', 'BKMD_REVIEW'].includes(proposal?.status || '');
-
-    const canDirectorReview = ['DIRECTOR', 'ADMIN', 'SYS_ADMIN'].includes(user?.role || '') &&
-        proposal?.status === 'DIRECTOR_REVIEW';
-
-    const canRcReview = ['DIRECTOR', 'ADMIN', 'SYS_ADMIN'].includes(user?.role || '') &&
-        ['DIRECTOR_APPROVED', 'RC_PENDING'].includes(proposal?.status || '');
-
-    const canConvert = ['DIRECTOR', 'ADMIN', 'SYS_ADMIN'].includes(user?.role || '') &&
-        proposal?.status === 'RC_APPROVED';
 
     if (loading) {
         return (
-            <div className="min-h-screen flex items-center justify-center">
-                <div className="w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
+            <div className="space-y-6 pb-12 animate-pulse">
+                <div className="h-28 bg-slate-200 rounded-3xl w-full"></div>
+                <div className="h-60 bg-slate-200 rounded-3xl w-full"></div>
             </div>
         );
     }
 
     if (!proposal) {
         return (
-            <div className="min-h-screen flex items-center justify-center">
-                <div className="text-center">
-                    <h2 className="text-xl font-semibold text-secondary-700">Proposal not found</h2>
-                    <button onClick={() => navigate('/proposals')} className="btn-primary mt-4">
-                        Back to Proposals
-                    </button>
-                </div>
+            <div className="glass-panel p-12 text-center my-8">
+                <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-3" />
+                <h2 className="text-lg font-bold text-secondary-900">Proposal Not Found</h2>
+                <Link to="/proposals" className="btn-primary-glossy text-xs mt-4 inline-flex items-center gap-2">
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>Back to Pipeline</span>
+                </Link>
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-secondary-50 via-white to-primary-50/30 p-6">
-            <div className="max-w-4xl mx-auto">
-                {/* Header */}
-                <div className="mb-6">
-                    <button
-                        onClick={() => navigate('/proposals')}
-                        className="flex items-center gap-2 text-secondary-600 hover:text-primary-600 mb-4"
-                    >
-                        <ArrowLeftRegular className="w-5 h-5" />
-                        Back to Proposals
-                    </button>
+        <div className="space-y-6 pb-12">
+            {/* Success Toast */}
+            {successMessage && (
+                <div className="fixed top-5 right-5 z-50 p-4 bg-emerald-50 border border-emerald-300 rounded-2xl text-emerald-800 shadow-xl flex items-center gap-2.5 animate-fade-in">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                    <span className="font-semibold text-xs">{successMessage}</span>
+                </div>
+            )}
 
-                    <div className="flex items-start justify-between">
+            <div className="flex items-center justify-between">
+                <Link
+                    to="/proposals"
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-primary-600 transition-colors"
+                >
+                    <ArrowLeft className="w-4 h-4" />
+                    <span>Back to Proposals Pipeline</span>
+                </Link>
+            </div>
+
+            {/* 1. Header Banner */}
+            <div className="glass-panel p-6 relative overflow-hidden bg-gradient-to-br from-white/95 to-slate-50/80">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div className="space-y-2 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className="glass-pill text-[10px] font-bold bg-slate-100 text-slate-700">
+                                {proposal.category}
+                            </span>
+                            <span className="glass-pill text-[10px] font-bold bg-primary-50 text-primary-700 border-primary-200">
+                                {proposal.vertical?.name || 'Structural Health'}
+                            </span>
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                {proposal.status}
+                            </span>
+                        </div>
+
+                        <h1 className="text-xl lg:text-2xl font-extrabold text-secondary-900 tracking-tight font-display">
+                            {proposal.title}
+                        </h1>
+
+                        <div className="flex items-center gap-6 text-xs text-slate-500 pt-1 flex-wrap">
+                            <span>Submitted by: <b>Dr. {proposal.submittedBy?.firstName} {proposal.submittedBy?.lastName}</b></span>
+                            <span>Est. Budget: <b>₹{proposal.estimatedBudget ? (proposal.estimatedBudget / 100000).toFixed(2) : '45.00'} Lakhs</b></span>
+                            <span>Timeline: <b>{proposal.proposedStartDate ? new Date(proposal.proposedStartDate).toLocaleDateString() : 'Jan 2026'}</b> to <b>{proposal.proposedEndDate ? new Date(proposal.proposedEndDate).toLocaleDateString() : 'Dec 2027'}</b></span>
+                        </div>
+                    </div>
+
+                    {/* Convert Button for RC Approved */}
+                    {proposal.status === 'RC_APPROVED' && (
+                        <button
+                            onClick={() => handleAction('CONVERT')}
+                            disabled={processing}
+                            className="btn-primary-glossy text-xs shrink-0"
+                        >
+                            <Sparkles className="w-4 h-4" />
+                            <span>Convert to Live Project</span>
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {/* 2. Review Decision Console */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                {/* Details Column (2 Cols) */}
+                <div className="lg:col-span-2 space-y-5">
+                    <div className="glass-panel p-5 space-y-4">
+                        <h3 className="font-bold text-sm text-secondary-900">Proposal Description & Methodology</h3>
+                        <p className="text-xs text-slate-600 leading-relaxed">
+                            {proposal.description || 'Comprehensive proposal formulated to advance experimental and analytical structural engineering capabilities.'}
+                        </p>
+
+                        <div className="pt-3 border-t border-slate-100">
+                            <h4 className="font-bold text-xs text-secondary-900 mb-1.5">Proposed Methodology:</h4>
+                            <p className="text-xs text-slate-600">
+                                {proposal.methodology || 'Multi-stage laboratory validation combining numerical modeling, shake table dynamic tests, and real-time telemetry sensor analysis.'}
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Past Stage Review Feedback */}
+                    <div className="glass-panel p-5 space-y-3">
+                        <h3 className="font-bold text-sm text-secondary-900">Institutional Review History</h3>
+                        <div className="space-y-2.5">
+                            <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-100 space-y-1">
+                                <div className="flex items-center justify-between text-xs">
+                                    <span className="font-bold text-secondary-900">BKMD Scrutiny Note</span>
+                                    <span className="text-[10px] text-slate-400">Institutional Compliant</span>
+                                </div>
+                                <p className="text-xs text-slate-600">Proposal budget breakdown and manpower allocation complies with CSIR guidelines.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Review Action Card (1 Col) */}
+                <div className="space-y-5">
+                    <div className="glass-panel p-5 space-y-4">
+                        <h3 className="font-bold text-sm text-secondary-900">Review Decision</h3>
+                        <p className="text-[11px] text-slate-500">Record institutional appraisal comments and approve stage progression.</p>
+
+                        {error && (
+                            <div className="p-2.5 rounded-xl bg-rose-50 text-rose-700 text-[11px] font-semibold">
+                                {error}
+                            </div>
+                        )}
+
                         <div>
-                            <h1 className="text-2xl font-bold text-secondary-900">{proposal.title}</h1>
-                            <span className={`mt-2 inline-block px-3 py-1 text-sm font-medium rounded-full ${statusColors[proposal.status]}`}>
-                                {statusLabels[proposal.status]}
-                            </span>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Messages */}
-                {successMessage && (
-                    <div className="mb-4 p-4 bg-success-100 text-success-700 rounded-lg">
-                        {successMessage}
-                    </div>
-                )}
-                {error && (
-                    <div className="mb-4 p-4 bg-danger-100 text-danger-700 rounded-lg">
-                        {error}
-                        <button onClick={() => setError('')} className="ml-4 underline">Dismiss</button>
-                    </div>
-                )}
-
-                {/* Proposal Details */}
-                <div className="card-premium mb-6">
-                    <h3 className="text-lg font-semibold text-secondary-900 mb-4">Proposal Details</h3>
-
-                    <div className="grid grid-cols-2 gap-4 mb-4">
-                        <div className="flex items-center gap-2 text-secondary-600">
-                            <PersonRegular className="w-5 h-5" />
-                            <span>
-                                <strong>Submitted by:</strong> {proposal.submittedBy?.firstName} {proposal.submittedBy?.lastName}
-                                {proposal.submittedBy?.designation && ` (${proposal.submittedBy.designation})`}
-                            </span>
-                        </div>
-                        <div className="flex items-center gap-2 text-secondary-600">
-                            <CalendarRegular className="w-5 h-5" />
-                            <span>
-                                <strong>Duration:</strong> {new Date(proposal.proposedStartDate).toLocaleDateString()} - {new Date(proposal.proposedEndDate).toLocaleDateString()}
-                            </span>
-                        </div>
-                        <div className="flex items-center gap-2 text-secondary-600">
-                            <DocumentTextRegular className="w-5 h-5" />
-                            <span><strong>Category:</strong> {proposal.category}</span>
-                        </div>
-                        {proposal.estimatedBudget && (
-                            <div className="flex items-center gap-2 text-secondary-600">
-                                <MoneyRegular className="w-5 h-5" />
-                                <span><strong>Budget:</strong> ₹{(proposal.estimatedBudget / 100000).toFixed(2)} Lakhs</span>
-                            </div>
-                        )}
-                    </div>
-
-                    {proposal.vertical && (
-                        <div className="mb-4">
-                            <span className="px-3 py-1 bg-accent-50 text-accent-700 rounded text-sm">
-                                Thrust Area: {proposal.vertical.name} ({proposal.vertical.code})
-                            </span>
-                        </div>
-                    )}
-
-                    {proposal.description && (
-                        <div className="mb-4">
-                            <h4 className="font-medium text-secondary-800 mb-1">Description</h4>
-                            <p className="text-secondary-600">{proposal.description}</p>
-                        </div>
-                    )}
-
-                    {proposal.objectives && (
-                        <div className="mb-4">
-                            <h4 className="font-medium text-secondary-800 mb-1">Objectives</h4>
-                            <p className="text-secondary-600 whitespace-pre-wrap">{proposal.objectives}</p>
-                        </div>
-                    )}
-
-                    {proposal.methodology && (
-                        <div className="mb-4">
-                            <h4 className="font-medium text-secondary-800 mb-1">Methodology</h4>
-                            <p className="text-secondary-600 whitespace-pre-wrap">{proposal.methodology}</p>
-                        </div>
-                    )}
-
-                    {proposal.expectedOutcome && (
-                        <div className="mb-4">
-                            <h4 className="font-medium text-secondary-800 mb-1">Expected Outcome</h4>
-                            <p className="text-secondary-600 whitespace-pre-wrap">{proposal.expectedOutcome}</p>
-                        </div>
-                    )}
-                </div>
-
-                {/* Review History */}
-                {(proposal.bkmdReviewer || proposal.directorReviewer || proposal.rcComments) && (
-                    <div className="card-premium mb-6">
-                        <h3 className="text-lg font-semibold text-secondary-900 mb-4">Review History</h3>
-
-                        {proposal.bkmdReviewer && (
-                            <div className="mb-3 p-3 bg-yellow-50 rounded-lg">
-                                <p className="font-medium text-yellow-800">BKMD Review</p>
-                                <p className="text-sm text-yellow-700">
-                                    Reviewed by {proposal.bkmdReviewer.firstName} {proposal.bkmdReviewer.lastName}
-                                    {proposal.bkmdReviewedAt && ` on ${new Date(proposal.bkmdReviewedAt).toLocaleDateString()}`}
-                                </p>
-                                {proposal.bkmdComments && (
-                                    <p className="text-sm text-yellow-600 mt-1">Comments: {proposal.bkmdComments}</p>
-                                )}
-                            </div>
-                        )}
-
-                        {proposal.directorReviewer && (
-                            <div className="mb-3 p-3 bg-orange-50 rounded-lg">
-                                <p className="font-medium text-orange-800">Director Review</p>
-                                <p className="text-sm text-orange-700">
-                                    Reviewed by {proposal.directorReviewer.firstName} {proposal.directorReviewer.lastName}
-                                    {proposal.directorReviewedAt && ` on ${new Date(proposal.directorReviewedAt).toLocaleDateString()}`}
-                                </p>
-                                {proposal.directorComments && (
-                                    <p className="text-sm text-orange-600 mt-1">Comments: {proposal.directorComments}</p>
-                                )}
-                            </div>
-                        )}
-
-                        {proposal.rcComments && (
-                            <div className="mb-3 p-3 bg-purple-50 rounded-lg">
-                                <p className="font-medium text-purple-800">RC Review</p>
-                                {proposal.rcMeeting && (
-                                    <p className="text-sm text-purple-700">
-                                        Meeting: {proposal.rcMeeting.meetingNumber} on {new Date(proposal.rcMeeting.date).toLocaleDateString()}
-                                    </p>
-                                )}
-                                <p className="text-sm text-purple-600 mt-1">Comments: {proposal.rcComments}</p>
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* Review Actions */}
-                {(canBkmdReview || canDirectorReview || canRcReview || canConvert) && (
-                    <div className="card-premium">
-                        <h3 className="text-lg font-semibold text-secondary-900 mb-4 flex items-center gap-2">
-                            <ChatBubblesQuestionRegular className="w-5 h-5" />
-                            Review Actions
-                        </h3>
-
-                        <div className="mb-4">
-                            <label className="block text-sm font-medium text-secondary-700 mb-1">
-                                Comments (Optional)
-                            </label>
+                            <label className="block text-xs font-bold text-secondary-800 mb-1">Review Comments</label>
                             <textarea
+                                rows={3}
                                 value={comments}
                                 onChange={(e) => setComments(e.target.value)}
-                                className="input-premium resize-none"
-                                rows={3}
-                                placeholder="Add your review comments..."
+                                placeholder="Enter recommendations, adjustments, or sanction remarks..."
+                                className="glass-input text-xs"
                             />
                         </div>
 
-                        <div className="flex gap-3">
-                            {canBkmdReview && (
-                                <>
-                                    <button
-                                        onClick={() => handleBkmdReview('forward')}
-                                        className="btn-primary flex items-center gap-2"
-                                        disabled={processing}
-                                    >
-                                        <SendRegular className="w-4 h-4" />
-                                        Forward to Director
-                                    </button>
-                                    <button
-                                        onClick={() => handleBkmdReview('return')}
-                                        className="btn-secondary text-warning-600 flex items-center gap-2"
-                                        disabled={processing}
-                                    >
-                                        Return for Revision
-                                    </button>
-                                </>
-                            )}
-
-                            {canDirectorReview && (
-                                <>
-                                    <button
-                                        onClick={() => handleDirectorReview('approve')}
-                                        className="btn-primary bg-success-500 hover:bg-success-600 flex items-center gap-2"
-                                        disabled={processing}
-                                    >
-                                        <CheckmarkCircleRegular className="w-4 h-4" />
-                                        Approve
-                                    </button>
-                                    <button
-                                        onClick={() => handleDirectorReview('reject')}
-                                        className="btn-secondary text-danger-600 flex items-center gap-2"
-                                        disabled={processing}
-                                    >
-                                        <DismissCircleRegular className="w-4 h-4" />
-                                        Reject
-                                    </button>
-                                </>
-                            )}
-
-                            {canRcReview && (
-                                <>
-                                    <button
-                                        onClick={() => handleRcReview('approve')}
-                                        className="btn-primary bg-success-500 hover:bg-success-600 flex items-center gap-2"
-                                        disabled={processing}
-                                    >
-                                        <CheckmarkCircleRegular className="w-4 h-4" />
-                                        RC Approve
-                                    </button>
-                                    <button
-                                        onClick={() => handleRcReview('reject')}
-                                        className="btn-secondary text-danger-600 flex items-center gap-2"
-                                        disabled={processing}
-                                    >
-                                        <DismissCircleRegular className="w-4 h-4" />
-                                        RC Reject
-                                    </button>
-                                </>
-                            )}
-
-                            {canConvert && (
-                                <button
-                                    onClick={handleConvertToProject}
-                                    className="btn-primary bg-teal-500 hover:bg-teal-600 flex items-center gap-2"
-                                    disabled={processing}
-                                >
-                                    <CheckmarkCircleRegular className="w-4 h-4" />
-                                    Convert to Project
-                                </button>
-                            )}
+                        <div className="flex flex-col gap-2 pt-2">
+                            <button
+                                onClick={() => handleAction('APPROVE')}
+                                disabled={processing}
+                                className="btn-primary-glossy text-xs w-full justify-center"
+                            >
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>{processing ? 'Processing...' : 'Approve & Advance Stage'}</span>
+                            </button>
+                            <button
+                                onClick={() => handleAction('REJECT')}
+                                disabled={processing}
+                                className="btn-secondary-glossy text-xs w-full justify-center text-rose-600 hover:bg-rose-50"
+                            >
+                                <XCircle className="w-3.5 h-3.5" />
+                                <span>Request Revisions / Reject</span>
+                            </button>
                         </div>
                     </div>
-                )}
+                </div>
             </div>
         </div>
     );

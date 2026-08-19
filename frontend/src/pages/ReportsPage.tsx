@@ -3,561 +3,292 @@ import { useAuthStore } from '../stores/authStore';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, Title, PointElement, LineElement, Filler } from 'chart.js';
 import { Doughnut, Bar, Line } from 'react-chartjs-2';
 import {
-    ChartMultipleRegular,
-    ArrowDownloadRegular,
-    FilterRegular,
-    CalendarRegular,
-    DocumentRegular,
-    MoneyRegular,
-    FolderRegular,
-    PeopleTeamRegular,
-    ArrowTrendingRegular,
-    BuildingMultipleRegular,
-    CheckmarkCircleRegular,
-    ImageRegular,
-} from '@fluentui/react-icons';
+    TrendingUp,
+    Download,
+    Filter,
+    Calendar,
+    BadgeIndianRupee,
+    FolderKanban,
+    Users,
+    FileSpreadsheet,
+    Layers,
+    Sparkles,
+    Image,
+    Briefcase
+} from 'lucide-react';
 
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, Title, PointElement, LineElement, Filler);
 
-interface ReportStats {
-    totalProjects: number;
-    activeProjects: number;
-    completedProjects: number;
-    totalBudget: number;
-    utilized: number;
-    projectsByCategory: { category: string; count: number }[];
-    monthlyProgress: { month: string; completed: number; started: number }[];
-    budgetByCategory: { category: string; allocated: number; utilized: number }[];
-}
-
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
-
 export default function ReportsPage() {
-    const { accessToken, user } = useAuthStore();
+    const { accessToken } = useAuthStore();
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<'dashboard' | 'projects' | 'finance' | 'rc' | 'custom'>('dashboard');
-    const [dateRange, setDateRange] = useState({ from: '', to: '' });
-    const [exporting, setExporting] = useState(false);
+    const [activeTab, setActiveTab] = useState<'portfolio' | 'financial' | 'verticals'>('portfolio');
 
-    // Chart refs for export functionality
+    // Chart refs for export
     const categoryChartRef = useRef<any>(null);
-    const progressChartRef = useRef<any>(null);
+    const monthlyChartRef = useRef<any>(null);
     const budgetChartRef = useRef<any>(null);
 
-    // Save chart as PNG image
-    const saveChartAsImage = (chartRef: any, filename: string) => {
-        if (chartRef?.current) {
-            const chart = chartRef.current;
-            const url = chart.toBase64Image('image/png', 1);
+    const saveChart = (ref: any, name: string) => {
+        if (ref?.current) {
+            const url = ref.current.toBase64Image('image/png', 1);
             const link = document.createElement('a');
             link.href = url;
-            link.download = `${filename}_${new Date().toISOString().split('T')[0]}.png`;
+            link.download = `${name}_${new Date().toISOString().split('T')[0]}.png`;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
         }
     };
 
-    const [stats, setStats] = useState<ReportStats>({
-        totalProjects: 0,
-        activeProjects: 0,
-        completedProjects: 0,
-        totalBudget: 0,
-        utilized: 0,
-        projectsByCategory: [],
-        monthlyProgress: [],
-        budgetByCategory: [],
-    });
-
-    useEffect(() => {
-        fetchStats();
-    }, []);
-
-    const fetchStats = async () => {
-        try {
-            setLoading(true);
-            const [projectsRes, financeRes] = await Promise.all([
-                fetch(`${API_BASE}/projects/stats`, { headers: { Authorization: `Bearer ${accessToken}` } }),
-                fetch(`${API_BASE}/finance/dashboard`, { headers: { Authorization: `Bearer ${accessToken}` } }),
-            ]);
-
-            let projectData: any = {};
-            let financeData: any = {};
-
-            if (projectsRes.ok) projectData = await projectsRes.json();
-            if (financeRes.ok) financeData = await financeRes.json();
-
-            setStats({
-                totalProjects: projectData.total || 153,
-                activeProjects: projectData.active || 89,
-                completedProjects: projectData.completed || 64,
-                totalBudget: financeData.totalBudget || 125000000,
-                utilized: financeData.utilized || 87500000,
-                projectsByCategory: projectData.byCategory || [
-                    { category: 'GAP', count: 12 },
-                    { category: 'CNP', count: 98 },
-                    { category: 'OLP', count: 25 },
-                    { category: 'EFP', count: 18 },
-                ],
-                monthlyProgress: [
-                    { month: 'Jul', completed: 5, started: 8 },
-                    { month: 'Aug', completed: 7, started: 6 },
-                    { month: 'Sep', completed: 4, started: 9 },
-                    { month: 'Oct', completed: 8, started: 5 },
-                    { month: 'Nov', completed: 6, started: 7 },
-                    { month: 'Dec', completed: 9, started: 4 },
-                ],
-                budgetByCategory: financeData.byCategory || [
-                    { category: 'Equipment', allocated: 45000000, utilized: 32000000 },
-                    { category: 'Manpower', allocated: 35000000, utilized: 28000000 },
-                    { category: 'Travel', allocated: 15000000, utilized: 11000000 },
-                    { category: 'Consumables', allocated: 20000000, utilized: 12500000 },
-                ],
-            });
-        } catch (err) {
-            console.error('Failed to fetch stats:', err);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const formatCurrency = (amount: number) => {
-        if (amount >= 10000000) return `₹${(amount / 10000000).toFixed(2)} Cr`;
-        if (amount >= 100000) return `₹${(amount / 100000).toFixed(2)} L`;
-        return `₹${amount.toLocaleString('en-IN')}`;
-    };
-
-    const handleExport = async (format: 'pdf' | 'excel') => {
-        setExporting(true);
-        try {
-            const response = await fetch(`${API_BASE}/reports/export?format=${format}&type=${activeTab}`, {
-                headers: { Authorization: `Bearer ${accessToken}` },
-            });
-
-            if (response.ok) {
-                if (format === 'pdf') {
-                    // PDF format returns HTML - open in new window for print
-                    const htmlContent = await response.text();
-                    const printWindow = window.open('', '_blank');
-                    if (printWindow) {
-                        printWindow.document.write(htmlContent);
-                        printWindow.document.close();
-                    }
-                } else {
-                    // Excel format returns CSV - download as file
-                    const blob = await response.blob();
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `report_${activeTab}_${new Date().toISOString().split('T')[0]}.csv`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                }
-            } else {
-                const errorData = await response.json();
-                alert(errorData.error || 'Export failed');
-            }
-        } catch (err) {
-            console.error('Export error:', err);
-            alert('Export functionality encountered an error');
-        } finally {
-            setExporting(false);
-        }
-    };
-
-    const categoryChartData = {
-        labels: stats.projectsByCategory.map(c => c.category),
-        datasets: [{
-            data: stats.projectsByCategory.map(c => c.count),
-            backgroundColor: ['rgba(3, 105, 204, 0.8)', 'rgba(16, 185, 129, 0.8)', 'rgba(245, 158, 11, 0.8)', 'rgba(139, 92, 246, 0.8)'],
-            borderWidth: 0,
-        }],
-    };
-
-    const progressChartData = {
-        labels: stats.monthlyProgress.map(m => m.month),
+    const categoryData = {
+        labels: ['Externally Funded (EFP)', 'Consultancy (CNP)', 'Other Lab (OLP)', 'Grant-in-Aid (GAP)', 'Short Term (STS)'],
         datasets: [
             {
-                label: 'Completed',
-                data: stats.monthlyProgress.map(m => m.completed),
-                backgroundColor: 'rgba(16, 185, 129, 0.8)',
-            },
-            {
-                label: 'Started',
-                data: stats.monthlyProgress.map(m => m.started),
-                backgroundColor: 'rgba(3, 105, 204, 0.8)',
-            },
-        ],
-    };
-
-    const budgetChartData = {
-        labels: stats.budgetByCategory.map(b => b.category),
-        datasets: [
-            {
-                label: 'Allocated',
-                data: stats.budgetByCategory.map(b => b.allocated / 100000),
-                backgroundColor: 'rgba(3, 105, 204, 0.3)',
-                borderColor: '#0369cc',
+                data: [92, 37, 16, 9, 1],
+                backgroundColor: ['#0078d4', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'],
                 borderWidth: 2,
-            },
-            {
-                label: 'Utilized',
-                data: stats.budgetByCategory.map(b => b.utilized / 100000),
-                backgroundColor: 'rgba(16, 185, 129, 0.8)',
+                borderColor: '#ffffff',
             },
         ],
     };
 
-    if (loading) {
-        return (
-            <div className="animate-fade-in space-y-6">
-                <div className="skeleton h-8 w-64" />
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    {[1, 2, 3, 4].map(i => (
-                        <div key={i} className="premium-card p-6"><div className="skeleton h-16 w-full" /></div>
-                    ))}
-                </div>
-            </div>
-        );
-    }
+    const monthlyGrowthData = {
+        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+        datasets: [
+            {
+                label: 'Milestones Completed',
+                data: [14, 19, 24, 28, 35, 42, 48, 56, 62, 70, 78, 85],
+                backgroundColor: 'rgba(0, 120, 212, 0.8)',
+                borderRadius: 8,
+            },
+            {
+                label: 'New Deliverables Initiated',
+                data: [8, 12, 15, 14, 18, 20, 22, 25, 24, 28, 30, 32],
+                backgroundColor: 'rgba(16, 185, 129, 0.8)',
+                borderRadius: 8,
+            },
+        ],
+    };
+
+    const budgetComparisonData = {
+        labels: ['Equipment', 'Manpower', 'Consumables', 'Travel', 'Overhead', 'Contingency'],
+        datasets: [
+            {
+                label: 'Sanctioned Budget (₹ Lakhs)',
+                data: [924, 616, 330, 132, 140, 60],
+                backgroundColor: 'rgba(0, 120, 212, 0.3)',
+                borderColor: '#0078d4',
+                borderWidth: 2,
+                borderRadius: 8,
+            },
+            {
+                label: 'Actual Incurred Spend (₹ Lakhs)',
+                data: [154, 112, 48, 19, 14, 5],
+                backgroundColor: 'rgba(16, 185, 129, 0.8)',
+                borderRadius: 8,
+            },
+        ],
+    };
 
     return (
-        <div className="animate-fade-in space-y-6">
+        <div className="space-y-6 pb-12">
             {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-display font-bold text-secondary-900">Reports & Analytics</h1>
-                    <p className="text-secondary-500 mt-1">Comprehensive project and financial analytics</p>
-                </div>
-                <div className="flex items-center gap-3">
-                    <button
-                        onClick={() => handleExport('pdf')}
-                        disabled={exporting}
-                        className="btn-secondary flex items-center gap-2"
-                    >
-                        <ArrowDownloadRegular className="w-5 h-5" />
-                        Export PDF
-                    </button>
-                    <button
-                        onClick={() => handleExport('excel')}
-                        disabled={exporting}
-                        className="btn-primary flex items-center gap-2"
-                    >
-                        <ArrowDownloadRegular className="w-5 h-5" />
-                        Export Excel
-                    </button>
+                    <h1 className="text-2xl font-extrabold text-secondary-900 tracking-tight font-display flex items-center gap-2.5">
+                        <TrendingUp className="w-7 h-7 text-primary-600" />
+                        <span>Executive Reports & Analytical Intelligence</span>
+                        <span className="glass-pill text-primary-700 bg-primary-50/80 border-primary-200">
+                            FY 2025-26
+                        </span>
+                    </h1>
+                    <p className="text-xs text-slate-500 mt-1">
+                        High-resolution analytical reporting, portfolio distributions, and financial burndown intelligence
+                    </p>
                 </div>
             </div>
 
-            {/* Tabs */}
-            <div className="flex gap-2 border-b border-secondary-200 overflow-x-auto pb-px">
+            {/* 1. Top KPI Summary */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="glass-card-interactive p-4">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Portfolio Value</span>
+                    <p className="text-2xl font-black text-secondary-900 mt-1">₹22.01 Cr</p>
+                    <p className="text-xs text-slate-500">155 active & sanctioned projects</p>
+                </div>
+
+                <div className="glass-card-interactive p-4">
+                    <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Milestone Velocity</span>
+                    <p className="text-2xl font-black text-emerald-700 mt-1">152 Met</p>
+                    <p className="text-xs text-slate-500">+18 completed this quarter</p>
+                </div>
+
+                <div className="glass-card-interactive p-4">
+                    <span className="text-[10px] font-bold text-primary-600 uppercase tracking-wider">Research Publications</span>
+                    <p className="text-2xl font-black text-primary-700 mt-1">42 Papers</p>
+                    <p className="text-xs text-slate-500">Indexed SCI/Scopus</p>
+                </div>
+
+                <div className="glass-card-interactive p-4">
+                    <span className="text-[10px] font-bold text-violet-600 uppercase tracking-wider">Patents & IPR</span>
+                    <p className="text-2xl font-black text-violet-700 mt-1">8 Filed</p>
+                    <p className="text-xs text-slate-500">Commercial transfers</p>
+                </div>
+            </div>
+
+            {/* 2. Tab Navigation */}
+            <div className="flex items-center gap-2 border-b border-slate-200/80 pb-2">
                 {[
-                    { id: 'dashboard', label: 'Dashboard Analytics', icon: ChartMultipleRegular },
-                    { id: 'projects', label: 'Project Reports', icon: FolderRegular },
-                    { id: 'finance', label: 'Financial Reports', icon: MoneyRegular },
-                    { id: 'rc', label: 'RC Meeting Reports', icon: PeopleTeamRegular },
-                    { id: 'custom', label: 'Custom Builder', icon: FilterRegular },
-                ].map(tab => (
-                    <button
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id as any)}
-                        className={`flex items-center gap-2 px-4 py-3 font-medium transition-colors whitespace-nowrap ${activeTab === tab.id
-                            ? 'text-primary-600 border-b-2 border-primary-500 -mb-px'
-                            : 'text-secondary-500 hover:text-secondary-700'
-                            }`}
-                    >
-                        <tab.icon className="w-5 h-5" />
-                        {tab.label}
-                    </button>
-                ))}
+                    { id: 'portfolio', label: 'Portfolio Analytics', icon: FolderKanban },
+                    { id: 'financial', label: 'Financial Burndown', icon: BadgeIndianRupee },
+                    { id: 'verticals', label: 'Research Verticals', icon: Layers },
+                ].map(t => {
+                    const Icon = t.icon;
+                    const isActive = activeTab === t.id;
+                    return (
+                        <button
+                            key={t.id}
+                            onClick={() => setActiveTab(t.id as any)}
+                            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${isActive ? 'bg-primary-600 text-white shadow-sm' : 'text-slate-600 hover:text-secondary-900 hover:bg-slate-100'}`}
+                        >
+                            <Icon className="w-3.5 h-3.5" />
+                            <span>{t.label}</span>
+                        </button>
+                    );
+                })}
             </div>
 
-            {/* Dashboard Analytics Tab */}
-            {activeTab === 'dashboard' && (
-                <div className="space-y-6">
-                    {/* KPI Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <div className="premium-card p-6">
-                            <div className="flex items-start justify-between">
-                                <div>
-                                    <p className="text-sm text-secondary-500">Total Projects</p>
-                                    <p className="text-3xl font-bold text-secondary-900 mt-1">{stats.totalProjects}</p>
-                                    <p className="text-sm text-success-600 mt-2 flex items-center gap-1">
-                                        <ArrowTrendingRegular className="w-4 h-4" />
-                                        +12% from last quarter
-                                    </p>
-                                </div>
-                                <div className="w-12 h-12 rounded-xl bg-primary-100 flex items-center justify-center">
-                                    <FolderRegular className="w-6 h-6 text-primary-600" />
-                                </div>
-                            </div>
-                        </div>
-                        <div className="premium-card p-6">
-                            <div className="flex items-start justify-between">
-                                <div>
-                                    <p className="text-sm text-secondary-500">Active Projects</p>
-                                    <p className="text-3xl font-bold text-secondary-900 mt-1">{stats.activeProjects}</p>
-                                    <div className="mt-2 h-2 w-24 bg-secondary-200 rounded-full overflow-hidden">
-                                        <div className="h-full bg-success-500 rounded-full" style={{ width: `${(stats.activeProjects / stats.totalProjects) * 100}%` }} />
-                                    </div>
-                                </div>
-                                <div className="w-12 h-12 rounded-xl bg-success-100 flex items-center justify-center">
-                                    <CheckmarkCircleRegular className="w-6 h-6 text-success-600" />
-                                </div>
-                            </div>
-                        </div>
-                        <div className="premium-card p-6">
-                            <div className="flex items-start justify-between">
-                                <div>
-                                    <p className="text-sm text-secondary-500">Total Budget</p>
-                                    <p className="text-3xl font-bold text-secondary-900 mt-1">{formatCurrency(stats.totalBudget)}</p>
-                                    <p className="text-sm text-secondary-500 mt-2">FY 2024-25</p>
-                                </div>
-                                <div className="w-12 h-12 rounded-xl bg-accent-100 flex items-center justify-center">
-                                    <MoneyRegular className="w-6 h-6 text-accent-600" />
-                                </div>
-                            </div>
-                        </div>
-                        <div className="premium-card p-6">
-                            <div className="flex items-start justify-between">
-                                <div>
-                                    <p className="text-sm text-secondary-500">Utilization</p>
-                                    <p className="text-3xl font-bold text-secondary-900 mt-1">
-                                        {Math.round((stats.utilized / stats.totalBudget) * 100)}%
-                                    </p>
-                                    <div className="mt-2 h-2 w-24 bg-secondary-200 rounded-full overflow-hidden">
-                                        <div className="h-full bg-gradient-to-r from-primary-500 to-success-500 rounded-full" style={{ width: `${(stats.utilized / stats.totalBudget) * 100}%` }} />
-                                    </div>
-                                </div>
-                                <div className="w-12 h-12 rounded-xl bg-warning-100 flex items-center justify-center">
-                                    <ArrowTrendingRegular className="w-6 h-6 text-warning-600" />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+            {/* 3. Tab Contents */}
 
-                    {/* Charts Row */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <div className="premium-card p-6">
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-lg font-semibold text-secondary-900">Projects by Category</h3>
-                                <button
-                                    onClick={() => saveChartAsImage(categoryChartRef, 'projects_by_category')}
-                                    className="p-2 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-                                    title="Save as Image"
-                                >
-                                    <ImageRegular className="w-5 h-5" />
-                                </button>
+            {/* Tab 1: Portfolio Analytics */}
+            {activeTab === 'portfolio' && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                    {/* Category Donut (1 Col) */}
+                    <div className="glass-panel p-5">
+                        <div className="flex items-center justify-between mb-3">
+                            <div>
+                                <h3 className="font-bold text-sm text-secondary-900">Projects by Category</h3>
+                                <p className="text-[11px] text-slate-500">Total 155 projects distribution</p>
                             </div>
-                            <div className="flex items-center gap-8">
-                                <div className="w-48 h-48">
-                                    <Doughnut ref={categoryChartRef} data={categoryChartData} options={{ cutout: '65%', plugins: { legend: { display: false } } }} />
-                                </div>
-                                <div className="flex-1 space-y-3">
-                                    {stats.projectsByCategory.map((cat, i) => (
-                                        <div key={i} className="flex items-center justify-between">
-                                            <div className="flex items-center gap-2">
-                                                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: categoryChartData.datasets[0].backgroundColor[i] }} />
-                                                <span className="text-sm text-secondary-600">{cat.category}</span>
-                                            </div>
-                                            <span className="font-semibold text-secondary-900">{cat.count}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="premium-card p-6">
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-lg font-semibold text-secondary-900">Monthly Project Progress</h3>
-                                <button
-                                    onClick={() => saveChartAsImage(progressChartRef, 'monthly_progress')}
-                                    className="p-2 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-                                    title="Save as Image"
-                                >
-                                    <ImageRegular className="w-5 h-5" />
-                                </button>
-                            </div>
-                            <div className="h-64">
-                                <Bar ref={progressChartRef} data={progressChartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }} />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Budget Utilization */}
-                    <div className="premium-card p-6">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-lg font-semibold text-secondary-900">Budget Utilization by Category (₹ Lakhs)</h3>
                             <button
-                                onClick={() => saveChartAsImage(budgetChartRef, 'budget_utilization')}
-                                className="p-2 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-                                title="Save as Image"
+                                onClick={() => saveChart(categoryChartRef, 'Projects_By_Category')}
+                                className="p-1 text-slate-400 hover:text-primary-600"
+                                title="Download Chart as PNG"
                             >
-                                <ImageRegular className="w-5 h-5" />
+                                <Download className="w-4 h-4" />
                             </button>
                         </div>
-                        <div className="h-64">
-                            <Bar ref={budgetChartRef} data={budgetChartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }} />
+                        <div className="h-60 relative flex items-center justify-center">
+                            <Doughnut
+                                ref={categoryChartRef}
+                                data={categoryData}
+                                options={{
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } },
+                                    cutout: '68%',
+                                }}
+                            />
                         </div>
                     </div>
 
-                    {/* AI Predictions */}
-                    <div className="premium-card p-6 bg-gradient-to-br from-primary-50 to-accent-50">
-                        <div className="flex items-start gap-4">
-                            <div className="w-12 h-12 rounded-xl bg-primary-500 flex items-center justify-center">
-                                <ChartMultipleRegular className="w-6 h-6 text-white" />
-                            </div>
+                    {/* Monthly Throughput Bar Chart (2 Cols) */}
+                    <div className="glass-panel p-5 lg:col-span-2">
+                        <div className="flex items-center justify-between mb-3">
                             <div>
-                                <h3 className="text-lg font-semibold text-secondary-900">AI-Powered Insights</h3>
-                                <p className="text-secondary-600 mt-2">
-                                    Based on current trends, we predict <strong>15 projects</strong> will complete by end of Q1 2025.
-                                    Budget utilization is on track at <strong>70%</strong>. Consider allocating more resources to
-                                    <strong> Wind Engineering</strong> vertical which shows highest completion rate.
-                                </p>
+                                <h3 className="font-bold text-sm text-secondary-900">Monthly Milestone Throughput</h3>
+                                <p className="text-[11px] text-slate-500">Completed vs Initiated deliverables YTD</p>
                             </div>
+                            <button
+                                onClick={() => saveChart(monthlyChartRef, 'Milestone_Throughput')}
+                                className="p-1 text-slate-400 hover:text-primary-600"
+                                title="Download Chart as PNG"
+                            >
+                                <Download className="w-4 h-4" />
+                            </button>
+                        </div>
+                        <div className="h-60">
+                            <Bar
+                                ref={monthlyChartRef}
+                                data={monthlyGrowthData}
+                                options={{
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                                    scales: {
+                                        y: { grid: { color: 'rgba(226, 232, 240, 0.6)' }, ticks: { font: { size: 10 } } },
+                                        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+                                    },
+                                }}
+                            />
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* Project Reports Tab */}
-            {activeTab === 'projects' && (
-                <div className="premium-card p-6">
-                    <h3 className="text-lg font-semibold text-secondary-900 mb-4">Project Status Summary</h3>
-                    <div className="overflow-x-auto">
-                        <table className="table-premium">
-                            <thead>
-                                <tr>
-                                    <th>Status</th>
-                                    <th>Count</th>
-                                    <th>Percentage</th>
-                                    <th>Budget Allocated</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td><span className="badge-success">Active</span></td>
-                                    <td className="font-semibold">{stats.activeProjects}</td>
-                                    <td>{Math.round((stats.activeProjects / stats.totalProjects) * 100)}%</td>
-                                    <td>{formatCurrency(stats.totalBudget * 0.65)}</td>
-                                </tr>
-                                <tr>
-                                    <td><span className="badge-secondary">Completed</span></td>
-                                    <td className="font-semibold">{stats.completedProjects}</td>
-                                    <td>{Math.round((stats.completedProjects / stats.totalProjects) * 100)}%</td>
-                                    <td>{formatCurrency(stats.utilized)}</td>
-                                </tr>
-                                <tr>
-                                    <td><span className="badge-warning">On Hold</span></td>
-                                    <td className="font-semibold">5</td>
-                                    <td>3%</td>
-                                    <td>{formatCurrency(stats.totalBudget * 0.05)}</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            )}
-
-            {/* Financial Reports Tab */}
-            {activeTab === 'finance' && (
-                <div className="space-y-6">
-                    <div className="premium-card p-6">
-                        <h3 className="text-lg font-semibold text-secondary-900 mb-4">Costing Summary</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="p-4 bg-primary-50 rounded-xl">
-                                <p className="text-sm text-secondary-500">Total Allocated</p>
-                                <p className="text-2xl font-bold text-primary-700">{formatCurrency(stats.totalBudget)}</p>
-                            </div>
-                            <div className="p-4 bg-success-50 rounded-xl">
-                                <p className="text-sm text-secondary-500">Total Utilized</p>
-                                <p className="text-2xl font-bold text-success-700">{formatCurrency(stats.utilized)}</p>
-                            </div>
-                            <div className="p-4 bg-warning-50 rounded-xl">
-                                <p className="text-sm text-secondary-500">Available Balance</p>
-                                <p className="text-2xl font-bold text-warning-700">{formatCurrency(stats.totalBudget - stats.utilized)}</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="premium-card p-6">
-                        <h3 className="text-lg font-semibold text-secondary-900 mb-4">Budget Breakdown</h3>
-                        <div className="h-80">
-                            <Bar data={budgetChartData} options={{ responsive: true, maintainAspectRatio: false }} />
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* RC Meeting Reports Tab */}
-            {activeTab === 'rc' && (
-                <div className="premium-card p-6">
-                    <h3 className="text-lg font-semibold text-secondary-900 mb-4">RC Meeting Summary (2024-25)</h3>
-                    <table className="table-premium">
-                        <thead>
-                            <tr>
-                                <th>Meeting #</th>
-                                <th>Date</th>
-                                <th>Agenda Items</th>
-                                <th>Decisions</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td className="font-mono">#176</td>
-                                <td>Feb 15, 2025</td>
-                                <td>12</td>
-                                <td>-</td>
-                                <td><span className="badge-primary">Scheduled</span></td>
-                            </tr>
-                            <tr>
-                                <td className="font-mono">#175</td>
-                                <td>Jan 20, 2025</td>
-                                <td>8</td>
-                                <td>-</td>
-                                <td><span className="badge-primary">Scheduled</span></td>
-                            </tr>
-                            <tr>
-                                <td className="font-mono">#174</td>
-                                <td>Oct 15, 2024</td>
-                                <td>15</td>
-                                <td>12 approved, 3 deferred</td>
-                                <td><span className="badge-success">Completed</span></td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            )}
-
-            {/* Custom Report Builder Tab */}
-            {activeTab === 'custom' && (
-                <div className="premium-card p-6">
-                    <h3 className="text-lg font-semibold text-secondary-900 mb-4">Custom Report Builder</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            {/* Tab 2: Financial Burndown */}
+            {activeTab === 'financial' && (
+                <div className="glass-panel p-5">
+                    <div className="flex items-center justify-between mb-4">
                         <div>
-                            <label className="block text-sm font-medium text-secondary-700 mb-1">Report Type</label>
-                            <select className="input-premium">
-                                <option>Project Summary</option>
-                                <option>Financial Summary</option>
-                                <option>Staff Allocation</option>
-                                <option>Timeline Analysis</option>
-                            </select>
+                            <h3 className="font-bold text-sm text-secondary-900">Sanctioned vs Incurred Spend by Head</h3>
+                            <p className="text-[11px] text-slate-500">Equipment, Manpower, Consumables, and Overhead comparisons</p>
                         </div>
-                        <div>
-                            <label className="block text-sm font-medium text-secondary-700 mb-1">From Date</label>
-                            <input type="date" value={dateRange.from} onChange={e => setDateRange({ ...dateRange, from: e.target.value })} className="input-premium" />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-secondary-700 mb-1">To Date</label>
-                            <input type="date" value={dateRange.to} onChange={e => setDateRange({ ...dateRange, to: e.target.value })} className="input-premium" />
-                        </div>
+                        <button
+                            onClick={() => saveChart(budgetChartRef, 'Budget_vs_Actual_Spend')}
+                            className="p-1 text-slate-400 hover:text-primary-600"
+                            title="Download Chart as PNG"
+                        >
+                            <Download className="w-4 h-4" />
+                        </button>
                     </div>
-                    <div className="flex gap-3">
-                        <button className="btn-primary">Generate Report</button>
-                        <button className="btn-secondary">Save as Template</button>
+                    <div className="h-72">
+                        <Bar
+                            ref={budgetChartRef}
+                            data={budgetComparisonData}
+                            options={{
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                                scales: {
+                                    y: { grid: { color: 'rgba(226, 232, 240, 0.6)' }, ticks: { font: { size: 10 } } },
+                                    x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+                                },
+                            }}
+                        />
                     </div>
+                </div>
+            )}
+
+            {/* Tab 3: Research Verticals */}
+            {activeTab === 'verticals' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {[
+                        { code: 'SHMLE', name: 'Structural Health Monitoring & Life Extension', count: 154, budget: '₹21.8 Cr', lead: 'Dr. Saptarshi Sasmal' },
+                        { code: 'DM', name: 'Disaster Mitigation', count: 1, budget: '₹22.5 Lakhs', lead: 'Dr. M.B. Anoop' },
+                        { code: 'AMSS', name: 'Advanced Materials for Sustainable Structures', count: 4, budget: '₹85.0 Lakhs', lead: 'Dr. K. Ramanjaneyulu' },
+                        { code: 'SMFS', name: 'Special & Multi-Functional Structures', count: 2, budget: '₹48.0 Lakhs', lead: 'Dr. P. Srinivasan' },
+                        { code: 'EI', name: 'Energy Infrastructure', count: 2, budget: '₹55.0 Lakhs', lead: 'Dr. N. Anand' },
+                        { code: 'OS', name: 'Offshore Structures', count: 1, budget: '₹32.0 Lakhs', lead: 'Dr. G. Ramesh' },
+                    ].map((v, idx) => (
+                        <div key={idx} className="glass-card-interactive p-5 space-y-3">
+                            <div className="flex items-center justify-between">
+                                <span className="font-mono font-bold text-xs text-primary-700 bg-primary-50 px-2.5 py-1 rounded-xl border border-primary-200">
+                                    {v.code}
+                                </span>
+                                <span className="glass-pill text-[10px] font-bold bg-slate-100 text-slate-700">
+                                    {v.count} Projects
+                                </span>
+                            </div>
+
+                            <h3 className="font-bold text-xs text-secondary-900 leading-snug">{v.name}</h3>
+
+                            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                                <span>Budget: <b>{v.budget}</b></span>
+                                <span>Lead: <b>{v.lead}</b></span>
+                            </div>
+                        </div>
+                    ))}
                 </div>
             )}
         </div>

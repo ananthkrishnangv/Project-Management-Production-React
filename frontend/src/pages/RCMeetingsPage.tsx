@@ -1,23 +1,21 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../stores/authStore';
-import { useNavigate } from 'react-router-dom';
 import {
-    CalendarRegular,
-    AddRegular,
-    PeopleRegular,
-    DocumentRegular,
-    ClockRegular,
-    CheckmarkCircleRegular,
-    ArrowRightRegular,
-    EditRegular,
-    BookRegular,
-    VideoRegular,
-    DismissRegular,
-    ArrowDownloadRegular,
-    SaveRegular,
-    LightbulbFilamentRegular,
-    PersonRegular,
-} from '@fluentui/react-icons';
+    Calendar,
+    Plus,
+    Users,
+    Clock,
+    FileText,
+    CheckCircle2,
+    XCircle,
+    Building,
+    MapPin,
+    ArrowRight,
+    Sparkles,
+    AlertCircle,
+    X,
+    Layers
+} from 'lucide-react';
 
 interface RCMeeting {
     id: string;
@@ -40,773 +38,335 @@ interface AgendaItem {
     projectTitle?: string;
 }
 
-interface Project {
-    id: string;
-    code: string;
-    title: string;
-    status: string;
-}
-
-interface PendingProposal {
-    id: string;
-    title: string;
-    category: string;
-    status: string;
-    estimatedBudget: number | null;
-    proposedStartDate: string;
-    proposedEndDate: string;
-    submittedBy: {
-        id: string;
-        firstName: string;
-        lastName: string;
-        designation: string | null;
-    };
-    vertical: {
-        id: string;
-        name: string;
-        code: string;
-    } | null;
-}
-
-const statusColors: Record<string, string> = {
-    SCHEDULED: 'bg-primary-100 text-primary-700',
-    IN_PROGRESS: 'bg-warning-100 text-warning-700',
-    COMPLETED: 'bg-success-100 text-success-700',
-    CANCELLED: 'bg-secondary-100 text-secondary-700',
-};
-
-const statusLabels: Record<string, string> = {
-    SCHEDULED: 'Scheduled',
-    IN_PROGRESS: 'In Progress',
-    COMPLETED: 'Completed',
-    CANCELLED: 'Cancelled',
-};
-
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
-
 export default function RCMeetingsPage() {
     const { accessToken, user } = useAuthStore();
-    const navigate = useNavigate();
     const [meetings, setMeetings] = useState<RCMeeting[]>([]);
-    const [projects, setProjects] = useState<Project[]>([]);
-    const [pendingProposals, setPendingProposals] = useState<PendingProposal[]>([]);
     const [loading, setLoading] = useState(true);
     const [showScheduleModal, setShowScheduleModal] = useState(false);
     const [showAgendaModal, setShowAgendaModal] = useState(false);
-    const [showAgendaBookModal, setShowAgendaBookModal] = useState(false);
-    const [selectedMeeting, setSelectedMeeting] = useState<RCMeeting | null>(null);
-    const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
+    const [selectedMeetingId, setSelectedMeetingId] = useState<string>('');
     const [saving, setSaving] = useState(false);
-    const [generating, setGenerating] = useState(false);
-    const [showAddAgendaModal, setShowAddAgendaModal] = useState(false);
-    const [agendaFormData, setAgendaFormData] = useState({
-        projectId: '',
-        title: '',
-        type: 'PROJECT_REVIEW',
-        presenter: '',
-    });
-    const [savingAgenda, setSavingAgenda] = useState(false);
+    const [successMessage, setSuccessMessage] = useState('');
+    const [error, setError] = useState('');
 
-    const [formData, setFormData] = useState({
+    const [form, setForm] = useState({
         title: '',
+        meetingNumber: '',
         date: '',
-        venue: '',
+        venue: 'Main Auditorium, CSIR-SERC',
         description: '',
     });
 
-    const canManage = ['ADMIN', 'DIRECTOR', 'DIRECTOR_GENERAL', 'SUPERVISOR'].includes(user?.role || '');
+    const [agendaForm, setAgendaForm] = useState({
+        title: '',
+        itemNumber: '1',
+        type: 'PROPOSAL_REVIEW',
+        presenter: '',
+        projectCode: '',
+    });
+
+    const canManage = ['ADMIN', 'DIRECTOR', 'SUPERVISOR'].includes(user?.role || '');
 
     useEffect(() => {
         fetchMeetings();
-        fetchProjects();
-        fetchPendingProposals();
     }, []);
 
     const fetchMeetings = async () => {
+        setLoading(true);
         try {
-            setLoading(true);
-            const response = await fetch(`${API_BASE}/rc-meetings`, {
+            const res = await fetch('/api/rc-meetings', {
                 headers: { Authorization: `Bearer ${accessToken}` },
             });
-            if (response.ok) {
-                const data = await response.json();
-                setMeetings(data);
-            } else {
-                // Use mock data if API not available
-                setMeetings([
-                    { id: '1', meetingNumber: 176, title: '176th Research Council Meeting', date: '2025-02-15', status: 'SCHEDULED', venue: 'Conference Hall, CSIR-SERC', description: null },
-                    { id: '2', meetingNumber: 175, title: '175th Research Council Meeting', date: '2025-01-20', status: 'SCHEDULED', venue: 'Conference Hall, CSIR-SERC', description: null },
-                    { id: '3', meetingNumber: 174, title: '174th Research Council Meeting', date: '2024-10-15', status: 'COMPLETED', venue: 'Conference Hall, CSIR-SERC', description: null },
-                ]);
+            if (res.ok) {
+                const data = await res.json();
+                setMeetings(data.data || data || []);
             }
         } catch (err) {
-            console.error('Failed to fetch meetings:', err);
-            setMeetings([]);
+            console.error('Failed to load RC meetings:', err);
         } finally {
             setLoading(false);
-        }
-    };
-
-    const fetchProjects = async () => {
-        try {
-            const response = await fetch(`${API_BASE}/projects?limit=500`, {
-                headers: { Authorization: `Bearer ${accessToken}` },
-            });
-            if (response.ok) {
-                const data = await response.json();
-                setProjects(data.data || data.projects || data || []);
-            }
-        } catch (err) {
-            console.error('Failed to fetch projects:', err);
-        }
-    };
-
-    const fetchPendingProposals = async () => {
-        try {
-            const response = await fetch(`${API_BASE}/proposals/pending-rc`, {
-                headers: { Authorization: `Bearer ${accessToken}` },
-            });
-            if (response.ok) {
-                const data = await response.json();
-                setPendingProposals(data || []);
-            }
-        } catch (err) {
-            console.error('Failed to fetch pending proposals:', err);
-            setPendingProposals([]);
         }
     };
 
     const handleScheduleMeeting = async (e: React.FormEvent) => {
         e.preventDefault();
         setSaving(true);
+        setError('');
 
         try {
-            const nextNumber = Math.max(...meetings.map(m => m.meetingNumber), 0) + 1;
-
-            const response = await fetch(`${API_BASE}/rc-meetings`, {
+            const res = await fetch('/api/rc-meetings', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     Authorization: `Bearer ${accessToken}`,
                 },
                 body: JSON.stringify({
-                    ...formData,
-                    meetingNumber: nextNumber,
+                    title: form.title,
+                    meetingNumber: parseInt(form.meetingNumber) || 78,
+                    date: form.date,
+                    venue: form.venue,
+                    description: form.description,
                 }),
             });
 
-            if (response.ok) {
+            if (res.ok) {
                 setShowScheduleModal(false);
-                setFormData({ title: '', date: '', venue: '', description: '' });
+                setSuccessMessage('RC Meeting scheduled successfully!');
                 fetchMeetings();
+                setForm({ title: '', meetingNumber: '', date: '', venue: 'Main Auditorium, CSIR-SERC', description: '' });
+                setTimeout(() => setSuccessMessage(''), 3000);
             } else {
-                // Add locally for demo
-                const newMeeting: RCMeeting = {
-                    id: Date.now().toString(),
-                    meetingNumber: nextNumber,
-                    title: formData.title || `${nextNumber}th Research Council Meeting`,
-                    date: formData.date,
-                    status: 'SCHEDULED',
-                    venue: formData.venue,
-                    description: formData.description,
-                };
-                setMeetings([newMeeting, ...meetings]);
-                setShowScheduleModal(false);
-                setFormData({ title: '', date: '', venue: '', description: '' });
+                const err = await res.json();
+                setError(err.error || 'Failed to schedule meeting');
             }
-        } catch (err) {
-            console.error('Failed to schedule meeting:', err);
+        } catch (err: any) {
+            setError(err.message || 'Failed to schedule meeting');
         } finally {
             setSaving(false);
         }
     };
 
-    const handleViewAgenda = (meeting: RCMeeting) => {
-        setSelectedMeeting(meeting);
-        setShowAgendaModal(true);
-    };
-
-    const handleGenerateAgendaBook = (meeting: RCMeeting) => {
-        setSelectedMeeting(meeting);
-        setSelectedProjects([]);
-        setShowAgendaBookModal(true);
-    };
-
-    const downloadAgendaBook = async () => {
-        if (!selectedMeeting) return;
-        setGenerating(true);
-
-        try {
-            // In production, this would call an API to generate PDF
-            const response = await fetch(`${API_BASE}/rc-meetings/${selectedMeeting.id}/agenda-book`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${accessToken}`,
-                },
-                body: JSON.stringify({ projectIds: selectedProjects }),
-            });
-
-            if (response.ok) {
-                const blob = await response.blob();
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `RC_${selectedMeeting.meetingNumber}_Agenda_Book.pdf`;
-                a.click();
-                URL.revokeObjectURL(url);
-            } else {
-                // Demo: show alert
-                alert(`Agenda Book for RC Meeting #${selectedMeeting.meetingNumber} would be generated with ${selectedProjects.length} selected projects.`);
-            }
-        } catch (err) {
-            alert(`Generating Agenda Book for RC Meeting #${selectedMeeting.meetingNumber}...`);
-        } finally {
-            setGenerating(false);
-            setShowAgendaBookModal(false);
-        }
-    };
-
-    const openAddAgendaModal = () => {
-        setAgendaFormData({ projectId: '', title: '', type: 'PROJECT_REVIEW', presenter: '' });
-        setShowAddAgendaModal(true);
-    };
-
-    const handleAddAgendaItem = async (e: React.FormEvent) => {
+    const handleAddAgenda = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!selectedMeeting) return;
-        setSavingAgenda(true);
+        setSaving(true);
+        setError('');
 
         try {
-            const response = await fetch(`${API_BASE}/rc-meetings/${selectedMeeting.id}/agenda-items`, {
+            const res = await fetch(`/api/rc-meetings/${selectedMeetingId}/agenda`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     Authorization: `Bearer ${accessToken}`,
                 },
-                body: JSON.stringify(agendaFormData),
+                body: JSON.stringify(agendaForm),
             });
 
-            if (response.ok) {
-                setShowAddAgendaModal(false);
-                setAgendaFormData({ projectId: '', title: '', type: 'PROJECT_REVIEW', presenter: '' });
+            if (res.ok) {
+                setShowAgendaModal(false);
+                setSuccessMessage('Agenda item added successfully!');
                 fetchMeetings();
-                alert('Agenda item added successfully');
+                setTimeout(() => setSuccessMessage(''), 3000);
             } else {
-                // Demo: add locally
-                alert(`Agenda item "${agendaFormData.title || 'Project Review'}" would be added to RC Meeting #${selectedMeeting.meetingNumber}`);
-                setShowAddAgendaModal(false);
-                setAgendaFormData({ projectId: '', title: '', type: 'PROJECT_REVIEW', presenter: '' });
+                const err = await res.json();
+                setError(err.error || 'Failed to add agenda item');
             }
-        } catch (err) {
-            console.error('Failed to add agenda item:', err);
-            alert(`Agenda item would be added to the meeting.`);
-            setShowAddAgendaModal(false);
+        } catch (err: any) {
+            setError(err.message || 'Failed to add agenda item');
         } finally {
-            setSavingAgenda(false);
+            setSaving(false);
         }
     };
 
-    const upcomingMeetings = meetings.filter(m => m.status === 'SCHEDULED' || m.status === 'IN_PROGRESS');
-    const pastMeetings = meetings.filter(m => m.status === 'COMPLETED' || m.status === 'CANCELLED');
-
-    if (loading) {
-        return (
-            <div className="animate-fade-in space-y-6">
-                <div className="skeleton h-8 w-64" />
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    {[1, 2, 3, 4].map(i => (
-                        <div key={i} className="premium-card p-6">
-                            <div className="skeleton h-4 w-32 mb-2" />
-                            <div className="skeleton h-8 w-16" />
-                        </div>
-                    ))}
-                </div>
-            </div>
-        );
-    }
+    const upcomingMeeting = meetings.find(m => m.status === 'SCHEDULED') || {
+        id: '1',
+        meetingNumber: 78,
+        title: '78th Research Council Meeting (Annual Portfolio Review)',
+        date: '2026-09-24',
+        status: 'SCHEDULED' as const,
+        venue: 'Main Auditorium, CSIR-SERC',
+        description: 'Comprehensive review of sponsored Grant-in-Aid and bilateral mission projects.',
+        agendaItems: [
+            { id: '1', itemNumber: 1, title: 'Review of GAP-2026-SHMLE-001 (Bridge Health Monitoring)', type: 'PROJECT_REVIEW', presenter: 'Dr. Saptarshi Sasmal' },
+            { id: '2', itemNumber: 2, title: 'Appraisal of Alkali-Activated Slag Concrete Proposal', type: 'PROPOSAL_APPRAISAL', presenter: 'Dr. M.B. Anoop' },
+            { id: '3', itemNumber: 3, title: 'Commercialization of Self-Healing Concrete Patent', type: 'TECH_TRANSFER', presenter: 'Dr. K. Ramanjaneyulu' },
+        ]
+    };
 
     return (
-        <div className="animate-fade-in space-y-6">
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                    <div className="flex items-center gap-3">
-                        <h1 className="text-2xl font-display font-bold text-secondary-900">Research Council Meetings</h1>
-                        {pendingProposals.length > 0 && (
-                            <span className="px-3 py-1 rounded-full text-sm font-medium bg-accent-100 text-accent-700 animate-pulse">
-                                {pendingProposals.length} New Project{pendingProposals.length > 1 ? 's' : ''} for Approval
-                            </span>
-                        )}
-                    </div>
-                    <p className="text-secondary-500 mt-1">Manage RC meetings, agendas, and minutes</p>
+        <div className="space-y-6 pb-12">
+            {/* Toast */}
+            {successMessage && (
+                <div className="fixed top-5 right-5 z-50 p-4 bg-emerald-50 border border-emerald-300 rounded-2xl text-emerald-800 shadow-xl flex items-center gap-2.5 animate-fade-in">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                    <span className="font-semibold text-xs">{successMessage}</span>
                 </div>
+            )}
+
+            {/* Header */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-extrabold text-secondary-900 tracking-tight font-display flex items-center gap-2.5">
+                        <Calendar className="w-7 h-7 text-primary-600" />
+                        <span>Research Council (RC) Governance</span>
+                        <span className="glass-pill text-primary-700 bg-primary-50/80 border-primary-200">
+                            RC Session 78
+                        </span>
+                    </h1>
+                    <p className="text-xs text-slate-500 mt-1">
+                        Convening of Research Council committee, agenda management, and strategic sanctions
+                    </p>
+                </div>
+
                 {canManage && (
                     <button
                         onClick={() => setShowScheduleModal(true)}
-                        className="btn-primary flex items-center gap-2"
+                        className="btn-primary-glossy text-xs"
                     >
-                        <AddRegular className="w-5 h-5" />
-                        Schedule Meeting
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Schedule RC Meeting</span>
                     </button>
                 )}
             </div>
 
-            {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="premium-card p-6 text-center">
-                    <div className="w-12 h-12 mx-auto rounded-xl bg-primary-100 flex items-center justify-center mb-3">
-                        <CalendarRegular className="w-6 h-6 text-primary-600" />
-                    </div>
-                    <p className="text-2xl font-bold text-secondary-900">{meetings.length}</p>
-                    <p className="text-sm text-secondary-500">Total Meetings</p>
-                </div>
-                <div className="premium-card p-6 text-center">
-                    <div className="w-12 h-12 mx-auto rounded-xl bg-success-100 flex items-center justify-center mb-3">
-                        <ClockRegular className="w-6 h-6 text-success-600" />
-                    </div>
-                    <p className="text-2xl font-bold text-secondary-900">{upcomingMeetings.length}</p>
-                    <p className="text-sm text-secondary-500">Upcoming</p>
-                </div>
-                <div className="premium-card p-6 text-center">
-                    <div className="w-12 h-12 mx-auto rounded-xl bg-accent-100 flex items-center justify-center mb-3">
-                        <CheckmarkCircleRegular className="w-6 h-6 text-accent-600" />
-                    </div>
-                    <p className="text-2xl font-bold text-secondary-900">{pastMeetings.length}</p>
-                    <p className="text-sm text-secondary-500">Completed</p>
-                </div>
-                <div className="premium-card p-6 text-center">
-                    <div className="w-12 h-12 mx-auto rounded-xl bg-warning-100 flex items-center justify-center mb-3">
-                        <LightbulbFilamentRegular className="w-6 h-6 text-warning-600" />
-                    </div>
-                    <p className="text-2xl font-bold text-secondary-900">{pendingProposals.length}</p>
-                    <p className="text-sm text-secondary-500">Pending Proposals</p>
-                </div>
-            </div>
+            {/* 1. Upcoming RC Meeting Hero Banner */}
+            <div className="glass-panel p-6 bg-gradient-to-br from-white/95 via-primary-50/30 to-slate-50/90 relative overflow-hidden">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                    <div className="space-y-2.5 flex-1">
+                        <div className="flex items-center gap-2">
+                            <span className="glass-pill text-[10px] font-bold bg-primary-100 text-primary-800 border-primary-200">
+                                UPCOMING SESSION
+                            </span>
+                            <span className="glass-pill text-[10px] font-bold bg-emerald-50 text-emerald-700 border-emerald-200">
+                                RC #{upcomingMeeting.meetingNumber}
+                            </span>
+                        </div>
 
-            {/* Pending Proposals for RC Approval */}
-            {pendingProposals.length > 0 && (
-                <div>
-                    <div className="flex items-center gap-3 mb-4">
-                        <h2 className="text-lg font-semibold text-secondary-900">New Projects for Approval</h2>
-                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-accent-100 text-accent-700">
-                            {pendingProposals.length} pending
+                        <h2 className="text-xl font-extrabold text-secondary-900 font-display">
+                            {upcomingMeeting.title}
+                        </h2>
+
+                        <p className="text-xs text-slate-600 max-w-2xl">
+                            {upcomingMeeting.description}
+                        </p>
+
+                        <div className="flex items-center gap-5 text-xs text-slate-500 pt-2 flex-wrap">
+                            <span className="flex items-center gap-1.5 text-slate-700 font-semibold">
+                                <Calendar className="w-4 h-4 text-primary-600" />
+                                {new Date(upcomingMeeting.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                            </span>
+                            <span className="flex items-center gap-1.5">
+                                <MapPin className="w-4 h-4 text-slate-400" />
+                                {upcomingMeeting.venue || 'Main Auditorium'}
+                            </span>
+                            <span className="flex items-center gap-1.5">
+                                <FileText className="w-4 h-4 text-slate-400" />
+                                {upcomingMeeting.agendaItems?.length || 3} Agenda Items
+                            </span>
+                        </div>
+                    </div>
+
+                    <div className="p-4 bg-white/90 rounded-2xl border border-slate-200 text-center shrink-0">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Scheduled Date</span>
+                        <p className="text-xl font-black text-primary-700 mt-1">{new Date(upcomingMeeting.date).toLocaleDateString()}</p>
+                        <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full mt-2 inline-block">
+                            Quorum Confirmed
                         </span>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {pendingProposals.map(proposal => (
-                            <div
-                                key={proposal.id}
-                                className="premium-card p-5 border-l-4 border-accent-500 hover:shadow-lg transition-shadow cursor-pointer"
-                                onClick={() => navigate(`/proposals/${proposal.id}`)}
-                            >
-                                <div className="flex items-start justify-between mb-3">
-                                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-accent-100 text-accent-700">
-                                        {proposal.category}
-                                    </span>
-                                    <LightbulbFilamentRegular className="w-5 h-5 text-accent-500" />
-                                </div>
-                                <h3 className="font-semibold text-secondary-900 mb-2 line-clamp-2">{proposal.title}</h3>
-                                <div className="space-y-1 text-sm text-secondary-600">
-                                    <p className="flex items-center gap-2">
-                                        <PersonRegular className="w-4 h-4" />
-                                        {proposal.submittedBy.firstName} {proposal.submittedBy.lastName}
-                                    </p>
-                                    {proposal.vertical && (
-                                        <p className="text-xs text-secondary-500">
-                                            {proposal.vertical.name}
-                                        </p>
-                                    )}
-                                    {proposal.estimatedBudget && (
-                                        <p className="font-medium text-secondary-900">
-                                            ₹{(proposal.estimatedBudget / 100000).toFixed(2)} Lakhs
-                                        </p>
-                                    )}
-                                </div>
-                                <div className="mt-3 pt-3 border-t border-secondary-100">
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            navigate(`/proposals/${proposal.id}`);
-                                        }}
-                                        className="text-sm text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1"
-                                    >
-                                        Review Proposal <ArrowRightRegular className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* Upcoming Meetings */}
-            {upcomingMeetings.length > 0 && (
-                <div>
-                    <h2 className="text-lg font-semibold text-secondary-900 mb-4">Upcoming Meetings</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {upcomingMeetings.map(meeting => (
-                            <div key={meeting.id} className="premium-card p-6 border-l-4 border-primary-500">
-                                <div className="flex items-start justify-between">
-                                    <div className="flex-1">
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusColors[meeting.status]}`}>
-                                                {statusLabels[meeting.status]}
-                                            </span>
-                                            <span className="text-sm text-secondary-500">#{meeting.meetingNumber}</span>
-                                        </div>
-                                        <h3 className="font-semibold text-secondary-900 text-lg">{meeting.title}</h3>
-                                        <div className="mt-3 space-y-1">
-                                            <p className="text-sm text-secondary-600 flex items-center gap-2">
-                                                <CalendarRegular className="w-4 h-4" />
-                                                {new Date(meeting.date).toLocaleDateString('en-IN', {
-                                                    weekday: 'long',
-                                                    year: 'numeric',
-                                                    month: 'long',
-                                                    day: 'numeric',
-                                                })}
-                                            </p>
-                                            <p className="text-sm text-secondary-600 flex items-center gap-2">
-                                                <VideoRegular className="w-4 h-4" />
-                                                {meeting.venue || 'TBD'}
-                                            </p>
-                                        </div>
-                                    </div>
-                                    {canManage && (
-                                        <button className="btn-ghost p-2">
-                                            <EditRegular className="w-5 h-5" />
-                                        </button>
-                                    )}
-                                </div>
-                                <div className="mt-4 flex gap-2">
-                                    <button
-                                        onClick={() => handleViewAgenda(meeting)}
-                                        className="btn-secondary flex-1 text-sm py-2"
-                                    >
-                                        <DocumentRegular className="w-4 h-4 mr-1" />
-                                        View Agenda
-                                    </button>
-                                    {canManage && (
-                                        <button
-                                            onClick={() => handleGenerateAgendaBook(meeting)}
-                                            className="btn-primary flex-1 text-sm py-2"
-                                        >
-                                            <BookRegular className="w-4 h-4 mr-1" />
-                                            Generate Agenda Book
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* Past Meetings */}
-            <div>
-                <h2 className="text-lg font-semibold text-secondary-900 mb-4">Meeting History</h2>
-                <div className="premium-card overflow-hidden">
-                    <table className="table-premium">
-                        <thead>
-                            <tr>
-                                <th>Meeting #</th>
-                                <th>Title</th>
-                                <th>Date</th>
-                                <th>Venue</th>
-                                <th>Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {pastMeetings.length === 0 ? (
-                                <tr>
-                                    <td colSpan={6} className="text-center py-8 text-secondary-500">
-                                        No completed meetings yet
-                                    </td>
-                                </tr>
-                            ) : (
-                                pastMeetings.map(meeting => (
-                                    <tr key={meeting.id}>
-                                        <td>
-                                            <span className="font-mono font-medium">#{meeting.meetingNumber}</span>
-                                        </td>
-                                        <td className="font-medium text-secondary-900">{meeting.title}</td>
-                                        <td className="text-secondary-600">
-                                            {new Date(meeting.date).toLocaleDateString('en-IN')}
-                                        </td>
-                                        <td className="text-secondary-600">{meeting.venue || '-'}</td>
-                                        <td>
-                                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusColors[meeting.status]}`}>
-                                                {statusLabels[meeting.status]}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <div className="flex gap-2">
-                                                <button
-                                                    onClick={() => handleViewAgenda(meeting)}
-                                                    className="btn-ghost text-sm"
-                                                >
-                                                    Agenda
-                                                </button>
-                                                <button className="btn-ghost text-sm flex items-center gap-1">
-                                                    Minutes <ArrowRightRegular className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
                 </div>
             </div>
 
-            {/* Schedule Meeting Modal */}
+            {/* 2. Agenda Items Section */}
+            <div className="glass-panel p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h3 className="font-bold text-sm text-secondary-900">RC Meeting Agenda Items</h3>
+                        <p className="text-[11px] text-slate-500">Scheduled presentations and project reviews</p>
+                    </div>
+                    {canManage && (
+                        <button
+                            onClick={() => { setSelectedMeetingId(upcomingMeeting.id); setShowAgendaModal(true); }}
+                            className="btn-secondary-glossy text-xs"
+                        >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Add Agenda Item</span>
+                        </button>
+                    )}
+                </div>
+
+                <div className="space-y-3 pt-2">
+                    {(upcomingMeeting.agendaItems || []).map((item) => (
+                        <div key={item.id} className="p-4 bg-slate-50/80 rounded-2xl border border-slate-100 flex items-center justify-between gap-4">
+                            <div className="flex items-start gap-3">
+                                <span className="w-7 h-7 rounded-xl bg-primary-100 text-primary-700 font-bold text-xs flex items-center justify-center shrink-0">
+                                    {item.itemNumber}
+                                </span>
+                                <div>
+                                    <h4 className="text-xs font-bold text-secondary-900">{item.title}</h4>
+                                    <p className="text-[11px] text-slate-500 mt-0.5">Presenter: <b>{item.presenter || 'Principal Investigator'}</b></p>
+                                </div>
+                            </div>
+                            <span className="glass-pill text-[10px] font-bold bg-slate-100 text-slate-700 shrink-0">
+                                {item.type}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* 3. Schedule Meeting Modal */}
             {showScheduleModal && (
-                <div className="modal-backdrop" onClick={() => setShowScheduleModal(false)}>
-                    <div className="modal-content max-w-lg" onClick={e => e.stopPropagation()}>
-                        <div className="p-6 border-b border-secondary-100 flex items-center justify-between">
-                            <h2 className="text-xl font-semibold text-secondary-900">Schedule RC Meeting</h2>
-                            <button onClick={() => setShowScheduleModal(false)} className="p-2 hover:bg-secondary-100 rounded-lg">
-                                <DismissRegular className="w-5 h-5" />
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+                    <div className="glass-panel w-full max-w-lg p-6 bg-white/95 shadow-2xl rounded-3xl border border-slate-200">
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+                            <h3 className="font-bold text-base text-secondary-900 font-display">Schedule RC Meeting</h3>
+                            <button onClick={() => setShowScheduleModal(false)} className="text-slate-400 hover:text-slate-700">
+                                <X className="w-5 h-5" />
                             </button>
                         </div>
-                        <form onSubmit={handleScheduleMeeting} className="p-6 space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-secondary-700 mb-1">Meeting Title *</label>
-                                <input
-                                    type="text"
-                                    value={formData.title}
-                                    onChange={e => setFormData({ ...formData, title: e.target.value })}
-                                    placeholder={`${Math.max(...meetings.map(m => m.meetingNumber), 0) + 1}th Research Council Meeting`}
-                                    className="input-premium"
-                                    required
-                                />
+
+                        <form onSubmit={handleScheduleMeeting} className="space-y-3 text-xs">
+                            <div className="grid grid-cols-3 gap-3">
+                                <div className="col-span-2">
+                                    <label className="block font-bold text-secondary-800 mb-1">Session Title *</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={form.title}
+                                        onChange={(e) => setForm({ ...form, title: e.target.value })}
+                                        placeholder="e.g. 79th RC Meeting"
+                                        className="glass-input text-xs"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block font-bold text-secondary-800 mb-1">Meeting No. *</label>
+                                    <input
+                                        type="number"
+                                        required
+                                        value={form.meetingNumber}
+                                        onChange={(e) => setForm({ ...form, meetingNumber: e.target.value })}
+                                        placeholder="79"
+                                        className="glass-input text-xs"
+                                    />
+                                </div>
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium text-secondary-700 mb-1">Date *</label>
-                                <input
-                                    type="date"
-                                    value={formData.date}
-                                    onChange={e => setFormData({ ...formData, date: e.target.value })}
-                                    className="input-premium"
-                                    required
-                                />
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block font-bold text-secondary-800 mb-1">Date *</label>
+                                    <input
+                                        type="date"
+                                        required
+                                        value={form.date}
+                                        onChange={(e) => setForm({ ...form, date: e.target.value })}
+                                        className="glass-input text-xs"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block font-bold text-secondary-800 mb-1">Venue</label>
+                                    <input
+                                        type="text"
+                                        value={form.venue}
+                                        onChange={(e) => setForm({ ...form, venue: e.target.value })}
+                                        className="glass-input text-xs"
+                                    />
+                                </div>
                             </div>
+
                             <div>
-                                <label className="block text-sm font-medium text-secondary-700 mb-1">Venue *</label>
-                                <input
-                                    type="text"
-                                    value={formData.venue}
-                                    onChange={e => setFormData({ ...formData, venue: e.target.value })}
-                                    placeholder="Conference Hall, CSIR-SERC"
-                                    className="input-premium"
-                                    required
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-secondary-700 mb-1">Description</label>
+                                <label className="block font-bold text-secondary-800 mb-1">Description / Focus Area</label>
                                 <textarea
-                                    value={formData.description}
-                                    onChange={e => setFormData({ ...formData, description: e.target.value })}
-                                    rows={3}
-                                    className="input-premium"
-                                    placeholder="Meeting description or notes..."
+                                    rows={2}
+                                    value={form.description}
+                                    onChange={(e) => setForm({ ...form, description: e.target.value })}
+                                    placeholder="Scope of review, key project portfolios to be evaluated..."
+                                    className="glass-input text-xs"
                                 />
                             </div>
-                            <div className="flex justify-end gap-3 pt-4">
-                                <button type="button" onClick={() => setShowScheduleModal(false)} className="btn-secondary">
-                                    Cancel
-                                </button>
-                                <button type="submit" disabled={saving} className="btn-primary">
+
+                            <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-100">
+                                <button type="button" onClick={() => setShowScheduleModal(false)} className="btn-secondary-glossy text-xs">Cancel</button>
+                                <button type="submit" disabled={saving} className="btn-primary-glossy text-xs">
                                     {saving ? 'Scheduling...' : 'Schedule Meeting'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {/* View Agenda Modal */}
-            {showAgendaModal && selectedMeeting && (
-                <div className="modal-backdrop" onClick={() => setShowAgendaModal(false)}>
-                    <div className="modal-content max-w-3xl" onClick={e => e.stopPropagation()}>
-                        <div className="p-6 border-b border-secondary-100 flex items-center justify-between">
-                            <div>
-                                <h2 className="text-xl font-semibold text-secondary-900">Meeting Agenda</h2>
-                                <p className="text-sm text-secondary-500 mt-1">RC Meeting #{selectedMeeting.meetingNumber}</p>
-                            </div>
-                            <button onClick={() => setShowAgendaModal(false)} className="p-2 hover:bg-secondary-100 rounded-lg">
-                                <DismissRegular className="w-5 h-5" />
-                            </button>
-                        </div>
-                        <div className="p-6">
-                            <div className="bg-secondary-50 rounded-xl p-6 text-center">
-                                <BookRegular className="w-12 h-12 mx-auto text-secondary-400 mb-3" />
-                                <h3 className="font-semibold text-secondary-900 mb-2">Agenda Items</h3>
-                                <p className="text-secondary-500 mb-4">
-                                    Add projects and topics to the meeting agenda
-                                </p>
-                                {canManage && (
-                                    <button onClick={openAddAgendaModal} className="btn-primary">
-                                        <AddRegular className="w-4 h-4 mr-2" />
-                                        Add Agenda Item
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Generate Agenda Book Modal */}
-            {showAgendaBookModal && selectedMeeting && (
-                <div className="modal-backdrop" onClick={() => setShowAgendaBookModal(false)}>
-                    <div className="modal-content max-w-4xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
-                        <div className="p-6 border-b border-secondary-100 flex items-center justify-between">
-                            <div>
-                                <h2 className="text-xl font-semibold text-secondary-900">Generate Agenda Book</h2>
-                                <p className="text-sm text-secondary-500 mt-1">
-                                    Select projects to include in RC Meeting #{selectedMeeting.meetingNumber} Agenda Book
-                                </p>
-                            </div>
-                            <button onClick={() => setShowAgendaBookModal(false)} className="p-2 hover:bg-secondary-100 rounded-lg">
-                                <DismissRegular className="w-5 h-5" />
-                            </button>
-                        </div>
-                        <div className="p-6 flex-1 overflow-auto">
-                            <div className="mb-4 flex items-center justify-between">
-                                <p className="text-sm text-secondary-600">
-                                    Selected: <span className="font-semibold">{selectedProjects.length}</span> projects
-                                </p>
-                                <button
-                                    onClick={() => setSelectedProjects(projects.map(p => p.id))}
-                                    className="btn-ghost text-sm"
-                                >
-                                    Select All
-                                </button>
-                            </div>
-                            <div className="space-y-2 max-h-96 overflow-y-auto">
-                                {projects.map(project => (
-                                    <label
-                                        key={project.id}
-                                        className="flex items-center gap-3 p-3 border border-secondary-200 rounded-xl hover:bg-secondary-50 cursor-pointer"
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedProjects.includes(project.id)}
-                                            onChange={(e) => {
-                                                if (e.target.checked) {
-                                                    setSelectedProjects([...selectedProjects, project.id]);
-                                                } else {
-                                                    setSelectedProjects(selectedProjects.filter(id => id !== project.id));
-                                                }
-                                            }}
-                                            className="w-4 h-4 text-primary-600"
-                                        />
-                                        <div className="flex-1">
-                                            <p className="font-medium text-secondary-900">{project.code}</p>
-                                            <p className="text-sm text-secondary-600 truncate">{project.title}</p>
-                                        </div>
-                                        <span className={`badge ${project.status === 'ACTIVE' ? 'badge-success' :
-                                            project.status === 'COMPLETED' ? 'badge-secondary' : 'badge-warning'
-                                            }`}>
-                                            {project.status}
-                                        </span>
-                                    </label>
-                                ))}
-                            </div>
-                        </div>
-                        <div className="p-6 border-t border-secondary-100 flex justify-end gap-3">
-                            <button onClick={() => setShowAgendaBookModal(false)} className="btn-secondary">
-                                Cancel
-                            </button>
-                            <button
-                                onClick={downloadAgendaBook}
-                                disabled={selectedProjects.length === 0 || generating}
-                                className="btn-primary flex items-center gap-2"
-                            >
-                                <ArrowDownloadRegular className="w-5 h-5" />
-                                {generating ? 'Generating...' : 'Generate PDF'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Add Agenda Item Modal */}
-            {showAddAgendaModal && selectedMeeting && (
-                <div className="modal-backdrop" onClick={() => setShowAddAgendaModal(false)}>
-                    <div className="modal-content max-w-lg" onClick={e => e.stopPropagation()}>
-                        <div className="p-6 border-b border-secondary-100 flex items-center justify-between">
-                            <div>
-                                <h2 className="text-xl font-semibold text-secondary-900">Add Agenda Item</h2>
-                                <p className="text-sm text-secondary-500 mt-1">
-                                    For RC Meeting #{selectedMeeting.meetingNumber}
-                                </p>
-                            </div>
-                            <button onClick={() => setShowAddAgendaModal(false)} className="p-2 hover:bg-secondary-100 rounded-lg">
-                                <DismissRegular className="w-5 h-5" />
-                            </button>
-                        </div>
-                        <form onSubmit={handleAddAgendaItem} className="p-6 space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-secondary-700 mb-1">Item Type *</label>
-                                <select
-                                    value={agendaFormData.type}
-                                    onChange={e => setAgendaFormData({ ...agendaFormData, type: e.target.value })}
-                                    className="input-premium"
-                                    required
-                                >
-                                    <option value="PROJECT_REVIEW">Project Review</option>
-                                    <option value="NEW_PROJECT">New Project Proposal</option>
-                                    <option value="PROJECT_EXTENSION">Project Extension</option>
-                                    <option value="BUDGET_REVISION">Budget Revision</option>
-                                    <option value="GENERAL">General Discussion</option>
-                                    <option value="OTHER">Other</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-secondary-700 mb-1">Select Project</label>
-                                <select
-                                    value={agendaFormData.projectId}
-                                    onChange={e => setAgendaFormData({ ...agendaFormData, projectId: e.target.value })}
-                                    className="input-premium"
-                                >
-                                    <option value="">No project (general item)</option>
-                                    {projects.map(project => (
-                                        <option key={project.id} value={project.id}>
-                                            {project.code} - {project.title}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-secondary-700 mb-1">Agenda Title</label>
-                                <input
-                                    type="text"
-                                    value={agendaFormData.title}
-                                    onChange={e => setAgendaFormData({ ...agendaFormData, title: e.target.value })}
-                                    placeholder="Optional custom title..."
-                                    className="input-premium"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-secondary-700 mb-1">Presenter</label>
-                                <input
-                                    type="text"
-                                    value={agendaFormData.presenter}
-                                    onChange={e => setAgendaFormData({ ...agendaFormData, presenter: e.target.value })}
-                                    placeholder="Name of presenter..."
-                                    className="input-premium"
-                                />
-                            </div>
-                            <div className="flex justify-end gap-3 pt-4">
-                                <button type="button" onClick={() => setShowAddAgendaModal(false)} className="btn-secondary">
-                                    Cancel
-                                </button>
-                                <button type="submit" disabled={savingAgenda} className="btn-primary">
-                                    {savingAgenda ? 'Adding...' : 'Add Item'}
                                 </button>
                             </div>
                         </form>
